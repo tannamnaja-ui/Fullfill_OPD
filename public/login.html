@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เข้าสู่ระบบ · ตรวจสอบความสมบูรณ์ข้อมูล OPD</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💜</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/theme.css">
+<style>
+  .stage { min-height: 100vh; display: grid; place-items: center; padding: 30px 20px; }
+  .panel {
+    width: 100%; background: rgba(255,255,255,.86); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.9); border-radius: var(--r-xl);
+    box-shadow: var(--sh-3); overflow: hidden;
+  }
+  .panel-login { max-width: 430px; }
+  .panel-setup { max-width: 660px; }
+
+  .brand { text-align: center; padding: 34px 32px 6px; }
+  .logo {
+    width: 74px; height: 74px; margin: 0 auto 16px; border-radius: 24px;
+    background: linear-gradient(135deg, var(--violet-300), var(--violet-500) 55%, #9db8ee);
+    display: grid; place-items: center; font-size: 34px;
+    box-shadow: 0 12px 30px rgba(132,100,205,.35);
+  }
+  .brand h1 { font-size: 20.5px; line-height: 1.35; }
+  .brand p { margin: 7px 0 0; font-size: 13.5px; color: var(--ink-mute); }
+
+  .panel-body { padding: 22px 32px 28px; }
+  .divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 16px; color: var(--ink-mute); font-size: 12.5px; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+  .foot-note { text-align: center; font-size: 12px; color: var(--ink-mute); padding: 0 32px 24px; }
+
+  .setup-head {
+    display: flex; align-items: center; gap: 14px; padding: 22px 30px;
+    background: linear-gradient(135deg, var(--violet-100), #e6eefb);
+    border-bottom: 1px solid var(--line);
+  }
+  .setup-head .ic {
+    width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; font-size: 22px;
+    background: rgba(255,255,255,.8); box-shadow: var(--sh-1); flex: 0 0 auto;
+  }
+  .setup-head h2 { font-size: 17.5px; }
+  .setup-head p { margin: 2px 0 0; font-size: 13px; color: var(--ink-soft); }
+  .setup-body { padding: 24px 30px; max-height: 66vh; overflow-y: auto; }
+  .setup-foot {
+    display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between;
+    padding: 18px 30px; border-top: 1px solid var(--line); background: var(--surface-2);
+  }
+
+  .sec-title {
+    font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--violet-600); margin: 22px 0 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .sec-title:first-child { margin-top: 0; }
+  .sec-title::after { content: ''; flex: 1; height: 1px; background: var(--violet-150); }
+
+  .result-box { margin-top: 14px; border-radius: var(--r-md); padding: 13px 16px; font-size: 13.5px; display: none; }
+  .result-box.show { display: block; }
+  .result-box.ok { background: var(--mint-bg); color: #2f7a5d; border: 1px solid #c6ecdb; }
+  .result-box.err { background: var(--rose-bg); color: #b04a63; border: 1px solid #f6cdd7; }
+  .result-box code { font-size: 12.5px; }
+
+  .token-box {
+    display: flex; gap: 8px; align-items: stretch;
+  }
+  .token-box .input {
+    font-family: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    letter-spacing: .06em; font-weight: 600; color: var(--violet-700); background: var(--violet-50);
+  }
+  .alert-note {
+    display: flex; gap: 10px; padding: 12px 15px; border-radius: var(--r-md);
+    background: var(--sky-bg); border: 1px solid #cfe4f9; color: #2f6ba4; font-size: 13px; margin-bottom: 18px;
+  }
+  .fade { animation: fadeIn .3s ease; }
+</style>
+</head>
+<body class="bg-aurora">
+<script>window.__BOOT = "__BOOT__";</script>
+
+<div class="stage">
+
+  <!-- ============ หน้าเข้าสู่ระบบ ============ -->
+  <div class="panel panel-login fade" id="viewLogin">
+    <div class="brand">
+      <div class="logo">💜</div>
+      <h1>ตรวจสอบความสมบูรณ์<br>การลงข้อมูลผู้รับบริการ OPD</h1>
+      <p>กรุณาเข้าสู่ระบบด้วยบัญชีผู้ใช้ HOSxP</p>
+    </div>
+    <div class="panel-body">
+      <div id="cfgWarn" class="alert-note hidden">
+        <span>⚙️</span><span>ยังไม่ได้ตั้งค่าการเชื่อมต่อฐานข้อมูล กรุณากด “ตั้งค่าการเชื่อมต่อ” ก่อนเข้าใช้งาน</span>
+      </div>
+      <form id="loginForm" autocomplete="on">
+        <div class="field">
+          <label for="username">ชื่อผู้ใช้ (Username)</label>
+          <input class="input" type="text" id="username" name="username" placeholder="officer_login_name" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="password">รหัสผ่าน (Password)</label>
+          <input class="input" type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+        <div id="loginErr" class="result-box err"></div>
+        <button class="btn btn-primary btn-block btn-lg mt-14" type="submit" id="btnLogin">เข้าสู่ระบบ</button>
+      </form>
+
+      <div class="divider">หรือเข้าสู่ระบบด้วย BMS Session</div>
+
+      <div id="bmsBox">
+        <div class="input-group">
+          <input class="input" type="text" id="bmsSid" placeholder="วาง BMS Session ID ที่นี่" autocomplete="off">
+          <button class="btn btn-mint" type="button" id="btnBms">🔗 เชื่อม</button>
+        </div>
+        <div class="hint">ถ้าเปิดจากลิงก์ที่มี <b>?bms-session-id=…</b> ระบบจะเข้าให้อัตโนมัติ โดยไม่ต้องกรอกรหัสผ่าน</div>
+        <div id="bmsErr" class="result-box err"></div>
+      </div>
+
+      <div class="divider">หรือ</div>
+      <button class="btn btn-soft btn-block" type="button" id="btnOpenSetup">⚙️ ตั้งค่าการเชื่อมต่อ</button>
+    </div>
+    <div class="foot-note">
+      สถานะฐานข้อมูล: <span id="dbStatus" class="badge badge-gray">กำลังตรวจสอบ…</span>
+    </div>
+  </div>
+
+  <!-- ============ หน้าเข้าระบบอัตโนมัติด้วย BMS ============ -->
+  <div class="panel panel-login hidden" id="viewBmsAuto">
+    <div class="brand">
+      <div class="logo">🔗</div>
+      <h1>กำลังเข้าสู่ระบบ<br>ด้วย BMS Session</h1>
+      <p id="bmsAutoMsg">กำลังตรวจสอบสิทธิ์การเข้าใช้งาน…</p>
+    </div>
+    <div class="panel-body" style="text-align:center;padding-bottom:32px">
+      <div id="bmsAutoSpin"><span class="spin dark" style="width:34px;height:34px;border-width:4px"></span></div>
+      <div id="bmsAutoErr" class="result-box err mt-14" style="text-align:left"></div>
+      <button class="btn btn-soft btn-block mt-14 hidden" type="button" id="btnBmsRetryLogin">← ไปหน้าเข้าสู่ระบบปกติ</button>
+    </div>
+  </div>
+
+  <!-- ============ หน้าตั้งค่าการเชื่อมต่อ ============ -->
+  <div class="panel panel-setup hidden" id="viewSetup">
+    <div class="setup-head">
+      <div class="ic">🔌</div>
+      <div>
+        <h2>ตั้งค่าการเชื่อมต่อฐานข้อมูล</h2>
+        <p>กำหนดฐานข้อมูล HOSxP และ Token สำหรับเรียกใช้ API</p>
+      </div>
+    </div>
+
+    <div class="setup-body">
+      <form id="setupForm">
+        <div class="sec-title">ชนิดฐานข้อมูล</div>
+        <div class="pick">
+          <input type="radio" name="driver" id="drvMysql" value="mysql" checked>
+          <label for="drvMysql"><span class="dot"></span> 🐬 MySQL / MariaDB</label>
+          <input type="radio" name="driver" id="drvPg" value="postgres">
+          <label for="drvPg"><span class="dot"></span> 🐘 PostgreSQL</label>
+        </div>
+
+        <div class="sec-title">ข้อมูลเซิร์ฟเวอร์</div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="host">IP Server</label>
+            <input class="input" type="text" id="host" placeholder="192.168.1.10" required>
+          </div>
+          <div class="field">
+            <label for="port">Port</label>
+            <input class="input" type="number" id="port" placeholder="3306" required>
+          </div>
+        </div>
+        <div class="field">
+          <label for="database">Database</label>
+          <input class="input" type="text" id="database" placeholder="hos" required>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="dbuser">Username</label>
+            <input class="input" type="text" id="dbuser" placeholder="sa" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="dbpass">Password</label>
+            <input class="input" type="password" id="dbpass" placeholder="••••••••" autocomplete="new-password">
+          </div>
+        </div>
+
+        <div class="sec-title">Token สำหรับเรียกใช้ API</div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="hospCode">รหัสสถานพยาบาล</label>
+            <input class="input" type="text" id="hospCode" placeholder="เช่น 10670" maxlength="12">
+            <div class="hint">Token จะขึ้นต้นด้วยรหัสนี้</div>
+          </div>
+          <div class="field">
+            <label for="token">Token (รหัสสถานพยาบาล + 10 หลัก)</label>
+            <div class="token-box">
+              <input class="input" type="text" id="token" placeholder="10670XXXXXXXXXX" readonly>
+              <button class="btn btn-soft" type="button" id="btnGenToken" title="สร้าง Token ใหม่">🔄 สร้าง</button>
+            </div>
+            <div class="hint">ทุกการเรียก API ต้องส่ง Token นี้ในหัวข้อ <b>X-API-Token</b></div>
+          </div>
+        </div>
+
+        <div id="testResult" class="result-box"></div>
+      </form>
+    </div>
+
+    <div class="setup-foot">
+      <button class="btn btn-ghost" type="button" id="btnBackLogin">← กลับหน้าเข้าสู่ระบบ</button>
+      <div class="flex gap-10">
+        <button class="btn btn-mint" type="button" id="btnTest">🔍 ทดสอบการเชื่อมต่อ</button>
+        <button class="btn btn-primary" type="button" id="btnSave">💾 บันทึกข้อมูลเชื่อมต่อ</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toasts"></div>
+<script src="/js/crypto.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/login.js"></script>
+</body>
+</html>

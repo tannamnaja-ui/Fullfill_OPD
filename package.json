@@ -1,0 +1,18 @@
+{
+  "name": "fullfill-opd",
+  "version": "1.0.0",
+  "description": "ระบบตรวจสอบความสมบูรณ์การลงข้อมูลผู้รับบริการ OPD",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "keywords": ["opd", "hosxp", "completeness"],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0",
+    "pg": "^8.12.0",
+    "cookie-parser": "^1.4.6"
+  }
+}

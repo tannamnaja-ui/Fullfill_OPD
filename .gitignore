@@ -1,0 +1,7 @@
+node_modules/
+config/connection.json
+config/.secret
+logs/*.jsonl
+logs/*.out
+*.log
+.DS_Store

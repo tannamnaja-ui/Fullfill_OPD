@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตรวจสอบความสมบูรณ์ข้อมูลผู้รับบริการ OPD</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💜</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/theme.css">
+<style>
+  .shell { display: flex; min-height: 100vh; }
+
+  /* ---------- Sidebar ---------- */
+  .side {
+    width: 268px; flex: 0 0 268px; position: sticky; top: 0; height: 100vh;
+    background: linear-gradient(175deg, #ffffff 0%, #faf7ff 60%, #f3edfd 100%);
+    border-right: 1px solid var(--line); display: flex; flex-direction: column;
+    box-shadow: 1px 0 20px rgba(124,92,208,.05); z-index: 20;
+  }
+  .side-brand { padding: 22px 20px 18px; display: flex; gap: 12px; align-items: center; }
+  .side-brand .logo {
+    width: 44px; height: 44px; border-radius: 14px; flex: 0 0 auto; display: grid; place-items: center;
+    font-size: 21px; background: linear-gradient(135deg, var(--violet-300), var(--violet-500));
+    box-shadow: 0 6px 16px rgba(132,100,205,.30);
+  }
+  .side-brand h1 { font-size: 14.5px; line-height: 1.35; }
+  .side-brand p { margin: 1px 0 0; font-size: 11.5px; color: var(--ink-mute); }
+
+  .side-nav { padding: 8px 12px; flex: 1; overflow-y: auto; }
+  .nav-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--ink-mute); padding: 14px 12px 8px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 12px 14px; margin-bottom: 4px; border: none; border-radius: var(--r-md);
+    background: transparent; cursor: pointer; text-align: left;
+    font-family: var(--font); font-size: 14.5px; font-weight: 600; color: var(--ink-soft);
+    transition: all .18s;
+  }
+  .nav-item .ic {
+    width: 32px; height: 32px; border-radius: 10px; flex: 0 0 auto; display: grid; place-items: center;
+    background: var(--violet-100); font-size: 15px; transition: all .18s;
+  }
+  .nav-item:hover { background: var(--violet-50); color: var(--violet-700); }
+  .nav-item.active {
+    background: linear-gradient(135deg, var(--violet-500), var(--violet-600));
+    color: #fff; box-shadow: 0 8px 20px rgba(132,100,205,.30);
+  }
+  .nav-item.active .ic { background: rgba(255,255,255,.22); }
+
+  .side-user {
+    margin: 12px; padding: 13px 14px; border-radius: var(--r-md);
+    background: rgba(255,255,255,.75); border: 1px solid var(--line);
+    display: flex; align-items: center; gap: 11px;
+  }
+  .side-user .av {
+    width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--violet-200), var(--violet-400)); color: #fff; font-weight: 700;
+  }
+  .side-user .nm { font-size: 13.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-user .rl { font-size: 11.5px; color: var(--ink-mute); }
+
+  /* ---------- Main ---------- */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    position: sticky; top: 0; z-index: 15;
+    background: rgba(251,249,255,.88); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    padding: 15px 26px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+  .topbar h2 { font-size: 18px; }
+  .topbar .sub { font-size: 12.5px; color: var(--ink-mute); margin-top: 1px; }
+  .content { padding: 22px 26px 40px; flex: 1; }
+
+  /* ---------- Filter bar ---------- */
+  .filters {
+    display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 15px 18px; box-shadow: var(--sh-1); margin-bottom: 20px;
+  }
+  .filters .fg { display: flex; flex-direction: column; gap: 5px; }
+  .filters .fg > label { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+  .filters .input, .filters .select { padding: 9px 13px; font-size: 14px; }
+  .filters .grow { flex: 1; min-width: 180px; }
+
+  /* ---------- Stat cards ---------- */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 15px; margin-bottom: 20px; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 18px 20px; box-shadow: var(--sh-1); position: relative; overflow: hidden;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .stat:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+  .stat::after {
+    content: ''; position: absolute; right: -26px; top: -26px; width: 92px; height: 92px;
+    border-radius: 50%; background: var(--violet-100); opacity: .55;
+  }
+  .stat.mint::after { background: var(--mint-bg); }
+  .stat.peach::after { background: var(--peach-bg); }
+  .stat.sky::after { background: var(--sky-bg); }
+  .stat .lb { font-size: 12.5px; color: var(--ink-mute); font-weight: 600; position: relative; z-index: 1; }
+  .stat .vl { font-size: 31px; font-weight: 700; line-height: 1.25; margin-top: 3px; position: relative; z-index: 1; letter-spacing: -.02em; }
+  .stat .ft { font-size: 12px; color: var(--ink-mute); position: relative; z-index: 1; }
+  .stat .ico { position: absolute; right: 16px; top: 15px; font-size: 21px; z-index: 1; opacity: .9; }
+
+  /* ---------- Chart grid ---------- */
+  .cols { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; align-items: start; }
+  @media (max-width: 1080px) { .cols { grid-template-columns: 1fr; } }
+
+  .brow { display: flex; align-items: center; gap: 12px; padding: 9px 0; }
+  .brow .nm { flex: 0 0 190px; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brow .bar { flex: 1; }
+  .brow .pc { flex: 0 0 92px; text-align: right; font-size: 13px; font-weight: 700; }
+  @media (max-width: 620px) { .brow .nm { flex-basis: 110px; } }
+
+  /* ---------- Missing chips ---------- */
+  .chips { display: flex; gap: 4px; flex-wrap: wrap; max-width: 340px; }
+  .chip {
+    font-size: 11.5px; padding: 2px 8px; border-radius: 99px;
+    background: var(--rose-bg); color: #b04a63; font-weight: 600; white-space: nowrap;
+  }
+  .chip.ok { background: var(--mint-bg); color: #2f7a5d; }
+
+  /* ---------- Modal form ---------- */
+  .fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 14px; }
+  .need { position: relative; }
+  .need .input, .need .select, .need .textarea { border-color: var(--peach); background: #fffaf5; }
+  .need > label::after { content: ' • ต้องเพิ่ม'; color: #c47c3f; font-size: 11.5px; font-weight: 700; }
+
+  .pt-head {
+    display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+    background: linear-gradient(135deg, var(--violet-50), var(--violet-100));
+    border: 1px solid var(--violet-150); border-radius: var(--r-md); padding: 14px 16px; margin-bottom: 18px;
+  }
+  .pt-head .av {
+    width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 21px;
+    background: #fff; box-shadow: var(--sh-1); flex: 0 0 auto;
+  }
+  .kv { display: flex; gap: 6px; font-size: 13px; }
+  .kv b { color: var(--ink-soft); font-weight: 600; }
+
+  .icd-wrap { position: relative; }
+  .icd-list {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
+    background: #fff; border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--sh-2); max-height: 250px; overflow-y: auto; display: none;
+  }
+  .icd-list.show { display: block; }
+  .icd-list div {
+    padding: 9px 13px; cursor: pointer; font-size: 13.5px; border-bottom: 1px solid var(--violet-50);
+  }
+  .icd-list div:hover { background: var(--violet-50); }
+  .icd-list div b { color: var(--violet-700); font-family: ui-monospace, Consolas, monospace; }
+
+  .dx-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+  @media (max-width: 900px) {
+    .side { position: fixed; left: 0; transform: translateX(-100%); transition: transform .25s; }
+    .side.open { transform: none; }
+    .content { padding: 18px 15px 36px; }
+    .topbar { padding: 13px 15px; }
+  }
+  .burger { display: none; }
+  @media (max-width: 900px) { .burger { display: inline-flex; } }
+</style>
+</head>
+<body>
+<script>window.__BOOT = "__BOOT__";</script>
+
+<div class="shell">
+  <!-- ============ เมนูด้านซ้าย ============ -->
+  <aside class="side" id="side">
+    <div class="side-brand">
+      <div class="logo">💜</div>
+      <div style="min-width:0">
+        <h1>ตรวจสอบความสมบูรณ์<br>ข้อมูลผู้รับบริการ OPD</h1>
+        <p id="hospLabel">—</p>
+      </div>
+    </div>
+
+    <nav class="side-nav">
+      <div class="nav-label">เมนูหลัก</div>
+      <button class="nav-item active" data-page="dashboard">
+        <span class="ic">📊</span><span>แดชบอร์ดข้อมูลที่ลงเพิ่ม</span>
+      </button>
+      <button class="nav-item" data-page="check">
+        <span class="ic">📝</span><span>ตรวจสอบและเพิ่มข้อมูล</span>
+      </button>
+    </nav>
+
+    <div class="side-user">
+      <div class="av" id="userAv">?</div>
+      <div style="min-width:0;flex:1">
+        <div class="nm" id="userName">—</div>
+        <div class="rl" id="userRole">ผู้ใช้งาน</div>
+      </div>
+      <button class="x-btn" id="btnLogout" title="ออกจากระบบ" style="background:var(--violet-100)">⏻</button>
+    </div>
+  </aside>
+
+  <!-- ============ ส่วนเนื้อหา ============ -->
+  <div class="main">
+    <div class="topbar">
+      <div class="flex items-center gap-10">
+        <button class="btn btn-soft btn-sm burger" id="btnBurger">☰</button>
+        <div>
+          <h2 id="pageTitle">แดชบอร์ดข้อมูลที่ลงเพิ่ม</h2>
+          <div class="sub" id="pageSub">ภาพรวมความสมบูรณ์ของข้อมูลผู้รับบริการ</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-10">
+        <span class="badge badge-violet" id="tokenBadge" title="Token ของสถานพยาบาล">🔐 —</span>
+        <button class="btn btn-soft btn-sm" id="btnReload">🔄 รีเฟรช</button>
+      </div>
+    </div>
+
+    <!-- แถบตัวกรอง -->
+    <div class="content">
+      <div class="filters">
+        <div class="fg">
+          <label for="dFrom">วันที่เริ่ม</label>
+          <input class="input" type="date" id="dFrom">
+        </div>
+        <div class="fg">
+          <label for="dTo">ถึงวันที่</label>
+          <input class="input" type="date" id="dTo">
+        </div>
+        <div class="fg grow">
+          <label for="depSel">จุดบริการ (ovst.main_dep)</label>
+          <select class="select" id="depSel"><option value="">— ทุกจุดบริการ —</option></select>
+        </div>
+        <div class="fg" id="fgStatus">
+          <label for="stSel">สถานะข้อมูล</label>
+          <select class="select" id="stSel">
+            <option value="incomplete">ยังไม่ครบถ้วน</option>
+            <option value="">ทั้งหมด</option>
+            <option value="complete">ครบถ้วนแล้ว</option>
+          </select>
+        </div>
+        <div class="fg grow" id="fgSearch">
+          <label for="qInput">ค้นหา HN / VN / ชื่อ / เลขบัตร</label>
+          <input class="input" type="search" id="qInput" placeholder="พิมพ์เพื่อค้นหา…">
+        </div>
+        <button class="btn btn-primary" id="btnApply">ค้นหาข้อมูล</button>
+      </div>
+
+      <!-- หน้าแดชบอร์ด -->
+      <section id="pageDashboard"></section>
+      <!-- หน้าตรวจสอบและเพิ่มข้อมูล -->
+      <section id="pageCheck" class="hidden"></section>
+    </div>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toasts"></div>
+<script src="/js/crypto.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
