@@ -212,6 +212,65 @@ async function diagsOf(cfg, vn) {
   } catch (e) { return []; }
 }
 
+/** รายการวินิจฉัยแบบเต็ม (ทุกเรคคอร์ดของ vn) — มี fallback ถ้า schema ต่างออกไป */
+async function diagsFull(cfg, vn) {
+  // แบบเต็ม: ชื่อโรค + ชื่อแพทย์
+  try {
+    const rows = await db.query(cfg,
+      "SELECT d.icd10, d.diagtype, COALESCE(i.name,'') AS name, d.doctor, COALESCE(dc.name,'') AS doctor_name " +
+      'FROM ovstdiag d ' +
+      'LEFT JOIN icd101 i ON i.code = d.icd10 ' +
+      'LEFT JOIN doctor dc ON dc.code = d.doctor ' +
+      'WHERE d.vn = ? ORDER BY d.diagtype, d.icd10', [vn]);
+    return rows.map((r) => ({
+      icd10: r.icd10, diagtype: String(r.diagtype === null ? '' : r.diagtype),
+      name: r.name || '', doctor: String(r.doctor === null ? '' : r.doctor), doctor_name: r.doctor_name || ''
+    }));
+  } catch (e1) { /* ลองแบบไม่มี doctor join */ }
+  try {
+    const rows = await db.query(cfg,
+      "SELECT d.icd10, d.diagtype, COALESCE(i.name,'') AS name " +
+      'FROM ovstdiag d LEFT JOIN icd101 i ON i.code = d.icd10 ' +
+      'WHERE d.vn = ? ORDER BY d.diagtype, d.icd10', [vn]);
+    return rows.map((r) => ({
+      icd10: r.icd10, diagtype: String(r.diagtype === null ? '' : r.diagtype),
+      name: r.name || '', doctor: '', doctor_name: ''
+    }));
+  } catch (e2) { /* ขั้นต่ำสุด: เอาทุกคอลัมน์ของ ovstdiag */ }
+  const rows = await db.query(cfg, 'SELECT * FROM ovstdiag WHERE vn = ? ORDER BY diagtype', [vn]);
+  return rows.map((r) => ({
+    icd10: r.icd10 || r.ICD10 || '', diagtype: String(r.diagtype === null || r.diagtype === undefined ? '' : r.diagtype),
+    name: '', doctor: String(r.doctor === null || r.doctor === undefined ? '' : r.doctor), doctor_name: ''
+  }));
+}
+
+/** เพิ่มวินิจฉัยด้วย vn (ดึง hn/vstdate จาก ovst ให้เอง) */
+async function addDiagVn(cfg, vn, icd10, diagtype, doctorCode) {
+  const ov = await db.query(cfg, 'SELECT hn, vstdate FROM ovst WHERE vn = ? LIMIT 1', [vn]);
+  if (!ov.length) { const e = new Error('ไม่พบ visit นี้'); e.status = 404; throw e; }
+  const visit = { vn: String(vn), hn: ov[0].hn, vstdate: String(ov[0].vstdate).slice(0, 10) };
+  return addDiag(cfg, visit, icd10, diagtype, doctorCode);
+}
+
+/** เปลี่ยนประเภทการวินิจฉัย (เจาะจงเรคคอร์ดด้วย diagtype เดิม) */
+async function updateDiagType(cfg, vn, icd10, oldType, newType) {
+  const code = String(icd10 || '').trim().toUpperCase();
+  const nt = String(newType || '').trim();
+  if (!code || !nt) { const e = new Error('ข้อมูลไม่ครบ'); e.status = 400; throw e; }
+  const ot = String(oldType || '').trim();
+  if (ot) return db.execute(cfg, 'UPDATE ovstdiag SET diagtype = ? WHERE vn = ? AND icd10 = ? AND diagtype = ?', [nt, String(vn), code, ot]);
+  return db.execute(cfg, 'UPDATE ovstdiag SET diagtype = ? WHERE vn = ? AND icd10 = ?', [nt, String(vn), code]);
+}
+
+/** ลบวินิจฉัย (เจาะจงเรคคอร์ดด้วย diagtype ถ้าระบุ) */
+async function deleteDiag(cfg, vn, icd10, diagtype) {
+  const code = String(icd10 || '').trim().toUpperCase();
+  if (!code) { const e = new Error('ไม่ได้ระบุรหัส ICD-10'); e.status = 400; throw e; }
+  const dt = String(diagtype || '').trim();
+  if (dt) return db.execute(cfg, 'DELETE FROM ovstdiag WHERE vn = ? AND icd10 = ? AND diagtype = ?', [String(vn), code, dt]);
+  return db.execute(cfg, 'DELETE FROM ovstdiag WHERE vn = ? AND icd10 = ?', [String(vn), code]);
+}
+
 const N = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 
 /** บันทึกสัญญาณชีพ / คัดกรอง ลง opdscreen (ถ้าไม่มีแถวจะสร้างใหม่) */
@@ -476,5 +535,5 @@ module.exports = {
   RULES, RULE_META, evaluate, departments, visits, getVisit, summarize,
   lookup, searchIcd10, diagsOf, saveScreen, saveVisitFields, addDiag, sqlFor,
   CHECK_FIELDS, CHECK_META, CHECK_KEYS, checkList, getCheckRow, summarizeCheck, saveCheckField, evalCheck,
-  searchDoctors
+  searchDoctors, diagsFull, addDiagVn, updateDiagType, deleteDiag
 };

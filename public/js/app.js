@@ -328,6 +328,7 @@
   var EDIT_COLS = [
     { key: 'hospmain', label: 'รพ.หลัก', type: 'text', w: 100 },
     { key: 'pdx', label: 'Pdx (ICD10)', type: 'icd10', w: 150 },
+    { key: 'diagbtn', label: 'แก้ไข Diag', type: 'button', w: 110 },
     { key: 'cc', label: 'อาการสำคัญ (CC)', type: 'text', w: 170 },
     { key: 'bps', label: 'SBP', type: 'int', w: 66 },
     { key: 'bpd', label: 'DBP', type: 'int', w: 66 },
@@ -392,6 +393,11 @@
           html += '<td class="' + c.cls + '"' + (c.w ? ' style="min-width:' + c.w + 'px"' : '') + '>' + esc(val || '-') + '</td>';
         });
         EDIT_COLS.forEach(function (c) {
+          if (c.type === 'button') {
+            html += '<td class="t-center" style="min-width:' + c.w + 'px">' +
+              '<button class="btn btn-soft btn-sm diagbtn" data-vn="' + esc(r.vn) + '">✏️ แก้ไข Diag</button></td>';
+            return;
+          }
           var val = cellVal(r[c.key]);
           var blank = r._missing.indexOf(c.key) >= 0;   // สีแดงตามกฎฝั่งเซิร์ฟเวอร์ (รพ.หลักมีเงื่อนไขสิทธิ)
           var extra = c.key === 'pdx' ? (' title="' + esc(cellVal(r.pdx_name)) + '"') : '';
@@ -451,6 +457,165 @@
       });
       inp.addEventListener('blur', function () { commitCell(inp); });
     });
+
+    // ปุ่มแก้ไข Diag
+    $$('#pageCheck button.diagbtn').forEach(function (b) {
+      b.addEventListener('click', function () { openDiagModal(b.dataset.vn); });
+    });
+  }
+
+  /* ================= หน้าต่างแก้ไขการวินิจฉัย (ovstdiag) ================= */
+  var DIAGTYPES = [
+    { v: '1', t: '1 · Principal (วินิจฉัยหลัก)' },
+    { v: '2', t: '2 · Comorbidity (โรคร่วม)' },
+    { v: '3', t: '3 · Complication (โรคแทรก)' },
+    { v: '4', t: '4 · Other (อื่นๆ)' },
+    { v: '5', t: '5 · External cause' }
+  ];
+  function dtOptions(cur) {
+    var c = (cur === null || cur === undefined) ? '' : String(cur);
+    var known = DIAGTYPES.some(function (d) { return d.v === c; });
+    var h = '';
+    // ถ้าค่าใน ovstdiag.diagtype ไม่อยู่ในรายการมาตรฐาน ให้แสดงค่าจริงไว้ด้านบน (เลือกอยู่)
+    if (c !== '' && !known) h += '<option value="' + esc(c) + '" selected>' + esc(c) + ' · (ค่าปัจจุบัน)</option>';
+    h += DIAGTYPES.map(function (d) {
+      return '<option value="' + d.v + '"' + (c === d.v ? ' selected' : '') + '>' + esc(d.t) + '</option>';
+    }).join('');
+    return h;
+  }
+
+  async function openDiagModal(vn) {
+    var root = $('#modalRoot');
+    root.innerHTML = '<div class="modal-back" id="dgBack"><div class="modal" style="max-width:720px">' +
+      '<div class="modal-head"><div><h3 style="font-size:17px">แก้ไขการวินิจฉัย (Diag)</h3>' +
+      '<div class="small muted">VN ' + esc(vn) + '</div></div>' +
+      '<button class="x-btn" id="dgClose">✕</button></div>' +
+      '<div class="modal-body" id="dgBody"><div class="empty"><span class="spin dark" style="width:26px;height:26px;border-width:3px"></span>' +
+      '<div class="mt-8">กำลังโหลด…</div></div></div>' +
+      '<div class="modal-foot"><span class="tiny muted" style="margin-right:auto">ข้อมูลจากตาราง ovstdiag</span>' +
+      '<button class="btn btn-primary" id="dgDone">💾 บันทึก</button></div>' +
+      '</div></div>';
+
+    var changed = false;
+    var close = function () { root.innerHTML = ''; if (changed) refresh(); };
+    $('#dgClose').addEventListener('click', close);
+    $('#dgDone').addEventListener('click', close);
+    $('#dgBack').addEventListener('click', function (e) { if (e.target.id === 'dgBack') close(); });
+
+    function render(diags) {
+      var h = '';
+      h += '<div class="flex items-center justify-between mb-8">' +
+        '<div class="small muted">พบทั้งหมด <b>' + diags.length + '</b> รายการ</div></div>';
+      h += '<div class="table-wrap"><table class="tbl"><thead><tr>' +
+        '<th>#</th><th>ICD-10</th><th>ชื่อโรค</th><th style="min-width:200px">ประเภท</th><th>แพทย์</th><th></th>' +
+        '</tr></thead><tbody id="dgRows">';
+      if (!diags.length) {
+        h += '<tr><td colspan="6"><div class="empty" style="padding:24px"><div class="ico">🩺</div>ยังไม่มีการวินิจฉัยของ VN นี้</div></td></tr>';
+      } else {
+        diags.forEach(function (d, idx) {
+          h += '<tr>' +
+            '<td class="t-mono muted">' + (idx + 1) + '</td>' +
+            '<td class="t-mono bold">' + esc(d.icd10) + '</td>' +
+            '<td class="small">' + esc(d.name || '-') + '</td>' +
+            '<td><select class="select dg-dt" data-icd="' + esc(d.icd10) + '" data-old="' + esc(d.diagtype) + '">' + dtOptions(d.diagtype) + '</select></td>' +
+            '<td class="small">' + esc(d.doctor_name || d.doctor || '-') + '</td>' +
+            '<td class="t-right"><button class="btn btn-ghost btn-sm dg-del" data-icd="' + esc(d.icd10) + '" data-dt="' + esc(d.diagtype) + '" title="ลบ">🗑️</button></td>' +
+            '</tr>';
+        });
+      }
+      h += '</tbody></table></div>';
+
+      // เพิ่มการวินิจฉัยใหม่
+      h += '<div class="sec-title" style="font-size:12.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--violet-600);margin:18px 0 12px">เพิ่มการวินิจฉัย</div>';
+      h += '<div class="fgrid" style="display:grid;grid-template-columns:2fr 1.3fr auto;gap:10px;align-items:end">' +
+        '<div class="field" style="margin:0"><label>ค้นหา ICD-10 / ชื่อโรค</label>' +
+        '<div class="icd-wrap"><input class="input" id="dgIcd" placeholder="เช่น J00 หรือ ไข้หวัด" autocomplete="off">' +
+        '<div class="icd-list" id="dgIcdList"></div></div><input type="hidden" id="dgIcdCode"></div>' +
+        '<div class="field" style="margin:0"><label>ประเภท</label><select class="select" id="dgAddType">' + dtOptions('1') + '</select></div>' +
+        '<button class="btn btn-primary" id="dgAdd">➕ เพิ่ม</button>' +
+        '</div>';
+
+      $('#dgBody').innerHTML = h;
+      bindRows();
+    }
+
+    function bindRows() {
+      $$('#dgBody select.dg-dt').forEach(function (sel) {
+        sel.addEventListener('change', async function () {
+          try {
+            var r = await API.call('diag.update', { vn: vn, icd10: sel.dataset.icd, oldType: sel.dataset.old, diagtype: sel.value });
+            changed = true;
+            UI.toast('เปลี่ยนประเภทแล้ว', sel.dataset.icd, 'ok', 1400);
+            render(r.diags);
+          } catch (e) { if (!guardExpiry(e)) UI.toast('แก้ไขไม่สำเร็จ', e.message, 'err'); }
+        });
+      });
+      $$('#dgBody button.dg-del').forEach(function (b) {
+        b.addEventListener('click', async function () {
+          if (!window.confirm('ลบการวินิจฉัย ' + b.dataset.icd + ' ?')) return;
+          try {
+            var r = await API.call('diag.delete', { vn: vn, icd10: b.dataset.icd, diagtype: b.dataset.dt });
+            changed = true;
+            UI.toast('ลบแล้ว', b.dataset.icd, 'ok', 1400);
+            render(r.diags);
+          } catch (e) { if (!guardExpiry(e)) UI.toast('ลบไม่สำเร็จ', e.message, 'err'); }
+        });
+      });
+
+      // ค้นหา ICD-10
+      var t = null;
+      var inp = $('#dgIcd');
+      inp.addEventListener('input', function () {
+        var q = inp.value.trim();
+        $('#dgIcdCode').value = '';
+        clearTimeout(t);
+        if (q.length < 2) { $('#dgIcdList').classList.remove('show'); return; }
+        t = setTimeout(async function () {
+          try {
+            var r = await API.call('data.icd10', { q: q });
+            var box = $('#dgIcdList');
+            box.innerHTML = r.items.length ? r.items.map(function (i) {
+              return '<div data-code="' + esc(i.code) + '"><b>' + esc(i.code) + '</b> · ' + esc(i.name) + '</div>';
+            }).join('') : '<div class="muted">ไม่พบรหัส</div>';
+            box.classList.add('show');
+            $$('#dgIcdList div[data-code]').forEach(function (el) {
+              el.addEventListener('click', function () {
+                $('#dgIcdCode').value = el.dataset.code;
+                inp.value = el.dataset.code + ' · ' + el.textContent.split('·').slice(1).join('·').trim();
+                box.classList.remove('show');
+              });
+            });
+          } catch (e) { /* เงียบ */ }
+        }, 300);
+      });
+      document.addEventListener('click', function (e) {
+        if (!e.target.closest('.icd-wrap')) { var b = $('#dgIcdList'); if (b) b.classList.remove('show'); }
+      });
+
+      $('#dgAdd').addEventListener('click', async function () {
+        var code = $('#dgIcdCode').value || $('#dgIcd').value.trim().split(' ')[0];
+        if (!code) { UI.toast('ยังไม่ได้เลือก ICD-10', '', 'warn'); return; }
+        UI.busy(this, true, 'กำลังเพิ่ม…');
+        try {
+          var r = await API.call('diag.add', { vn: vn, icd10: code, diagtype: $('#dgAddType').value });
+          changed = true;
+          if (r.duplicated) UI.toast('มีรหัสนี้อยู่แล้ว', code, 'warn');
+          else UI.toast('เพิ่มการวินิจฉัยแล้ว', code, 'ok', 1400);
+          render(r.diags);
+        } catch (e) {
+          if (!guardExpiry(e)) UI.toast('เพิ่มไม่สำเร็จ', e.message, 'err', 5000);
+          UI.busy(this, false);
+        }
+      });
+    }
+
+    try {
+      var d = await API.call('data.diags', { vn: vn });
+      render(d.diags);
+    } catch (e) {
+      if (guardExpiry(e)) return;
+      $('#dgBody').innerHTML = '<div class="empty"><div class="ico">😿</div>' + esc(e.message) + '</div>';
+    }
   }
 
   async function commitCell(inp) {

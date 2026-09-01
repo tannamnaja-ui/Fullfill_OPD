@@ -32,6 +32,7 @@ const ENDPOINTS = [
   'data.departments', 'data.dashboard', 'data.visits', 'data.visit',
   'data.lookup', 'data.icd10', 'data.doctors', 'data.audit',
   'data.checklist', 'save.field',
+  'data.diags', 'diag.add', 'diag.update', 'diag.delete',
   'save.visit'
 ];
 const ROUTE_MAP = {};      // ชื่อ -> รหัส
@@ -156,7 +157,7 @@ app.post('/q/:rid', async (req, res) => {
     // (endpoint หลัง login ยังต้องมี BMS session ที่ถูกต้องเสมอ — ตรวจด้านล่าง)
     apiToken = 'SETUP-' + APP_SECRET.slice(0, 16);
     const bmsFlow = name === 'auth.bms' || name === 'auth.me' || name === 'auth.logout' ||
-                    name.startsWith('data.') || name.startsWith('save.');
+                    name.startsWith('data.') || name.startsWith('save.') || name.startsWith('diag.');
     if (!name.startsWith('settings.') && !bmsFlow) {
       return fail(res, 401, 'ยังไม่ได้ตั้งค่าการเชื่อมต่อและ token');
     }
@@ -347,6 +348,39 @@ async function handle(name, p, session, req, res) {
           String(r.oqueue || '').toLowerCase().includes(q));
       }
       return { from, to, dep, fields: opd.CHECK_META, summary, grandTotal: all.length, total: rows.length, rows: rows.slice(0, 3000) };
+    }
+
+    /* ---- แก้ไขการวินิจฉัย (ovstdiag) ของ visit ---- */
+    case 'data.diags': {
+      const cfg = await contextFor(session);
+      const vn = String(p.vn || '');
+      if (!vn) { const e = new Error('ไม่พบ VN'); e.status = 400; throw e; }
+      return { vn, diags: await opd.diagsFull(cfg, vn) };
+    }
+
+    case 'diag.add': {
+      const cfg = await contextFor(session);
+      const vn = String(p.vn || '');
+      const r = await opd.addDiagVn(cfg, vn, p.icd10, p.diagtype || '1', p.doctor);
+      audit.write({ vn, hn: '', vstdate: '', main_dep: '', dep_name: '', patient: '',
+        user: session.u, userName: session.n, fields: ['diag+:' + String(p.icd10 || '').toUpperCase()] });
+      return { added: !!r.affected, duplicated: !!r.duplicated, diags: await opd.diagsFull(cfg, vn) };
+    }
+
+    case 'diag.update': {
+      const cfg = await contextFor(session);
+      const vn = String(p.vn || '');
+      await opd.updateDiagType(cfg, vn, p.icd10, p.oldType, p.diagtype);
+      return { updated: true, diags: await opd.diagsFull(cfg, vn) };
+    }
+
+    case 'diag.delete': {
+      const cfg = await contextFor(session);
+      const vn = String(p.vn || '');
+      const r = await opd.deleteDiag(cfg, vn, p.icd10, p.diagtype);
+      audit.write({ vn, hn: '', vstdate: '', main_dep: '', dep_name: '', patient: '',
+        user: session.u, userName: session.n, fields: ['diag-:' + String(p.icd10 || '').toUpperCase()] });
+      return { deleted: !!r.affected, diags: await opd.diagsFull(cfg, vn) };
     }
 
     case 'save.field': {
