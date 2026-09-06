@@ -314,14 +314,39 @@
     }
   }
 
+  /** เข้าระบบอัตโนมัติจาก BMS session ที่ server จำไว้ (ไม่ต้อง login) */
+  async function tryAutoResume() {
+    $('#viewLogin').classList.add('hidden');
+    $('#viewSetup').classList.add('hidden');
+    var v = $('#viewBmsAuto');
+    v.classList.remove('hidden');
+    v.classList.add('fade');
+    try {
+      var r = await API.call('auth.bmsresume', {});
+      API.setSession(r.session, r.user);
+      $('#bmsAutoMsg').textContent = 'ยินดีต้อนรับ ' + (r.user.name || '');
+      setTimeout(function () { location.href = '/app'; }, 400);
+    } catch (e) {
+      // BMS session ที่จำไว้หมดอายุ → กลับไปหน้า login ปกติ
+      API.boot.bmsSaved = false;
+      v.classList.add('hidden');
+      if (API.boot.setup) showSetup(); else { showLogin(); }
+      UI.toast('BMS session หมดอายุ', 'กรุณาเข้าสู่ระบบใหม่', 'warn', 5000);
+    }
+  }
+
   /* ---------------- เริ่มต้น ---------------- */
   var urlSid = sidFromUrl();
   var cookieSid = getCookie(BMS_COOKIE);
 
   if (urlSid) {
-    tryAutoBms(urlSid, true);
+    tryAutoBms(urlSid, true);                 // มากับลิงก์ ?bms-session-id=
+  } else if (API.boot.bmsSaved) {
+    tryAutoResume();                          // server จำ BMS session ไว้ → เข้าเลย
   } else if (cookieSid) {
-    tryAutoBms(cookieSid, false);
+    tryAutoBms(cookieSid, false);             // มี cookie เดิม
+  } else if (API.session()) {
+    location.href = '/app';                   // มี session อยู่แล้ว
   } else if (API.boot.setup) {
     UI.toast('ยังไม่ได้ตั้งค่าระบบ', 'ตั้งค่าฐานข้อมูล หรือเข้าสู่ระบบด้วย BMS Session', 'warn', 6000);
     showSetup();

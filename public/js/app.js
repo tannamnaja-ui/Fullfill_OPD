@@ -13,7 +13,8 @@
     q: '',
     rules: [],
     lookups: null,
-    visits: []
+    visits: [],
+    deps: []
   };
 
   /** ถ้า session หมดอายุ (โดยเฉพาะ BMS) ให้กลับไปหน้า login */
@@ -91,7 +92,7 @@
       state.to = this.value || state.from;
       loadDepartments();
     });
-    $('#depSel').addEventListener('change', function () { state.dep = this.value; refresh(); });
+    bindDepCombo();
     $('#stSel').addEventListener('change', function () { state.status = this.value; refresh(); });
 
     var t = null;
@@ -131,24 +132,77 @@
     return { from: state.from, to: state.to, dep: state.dep };
   }
 
-  /* ================= จุดบริการ ================= */
+  /* ================= จุดบริการ (combobox ค้นหาได้) ================= */
+  var ALL_DEP = { dep_code: '', dep_name: '— ทุกจุดบริการ —', visit_count: null };
+
   async function loadDepartments() {
-    var sel = $('#depSel');
     var keep = state.dep;
     try {
       var r = await API.call('data.departments', params());
-      var html = '<option value="">— ทุกจุดบริการ —</option>';
-      r.departments.forEach(function (d) {
-        html += '<option value="' + esc(d.dep_code) + '">' + esc(d.dep_name) +
-                ' (' + UI.num(d.visit_count) + ')</option>';
-      });
-      sel.innerHTML = html;
-      sel.value = keep;
-      if (sel.value !== keep) { state.dep = ''; sel.value = ''; }
+      state.deps = [ALL_DEP].concat(r.departments);
     } catch (e) {
-      sel.innerHTML = '<option value="">— ทุกจุดบริการ —</option>';
+      state.deps = [ALL_DEP];
       UI.toast('โหลดจุดบริการไม่สำเร็จ', e.message, 'err');
     }
+    // คงค่าที่เลือกไว้ถ้ายังมีในรายการ ไม่งั้นรีเซ็ตเป็นทุกจุดบริการ
+    var found = state.deps.filter(function (d) { return String(d.dep_code) === String(keep); })[0];
+    if (!found) { state.dep = ''; found = ALL_DEP; }
+    $('#depSel').value = state.dep;
+    $('#depSearch').value = state.dep ? found.dep_name : '';
+  }
+
+  function renderDepList(filter) {
+    var dd = $('#depDD');
+    var q = (filter || '').trim().toLowerCase();
+    var list = (state.deps || [ALL_DEP]).filter(function (d) {
+      if (!q) return true;
+      return String(d.dep_name).toLowerCase().indexOf(q) >= 0 || String(d.dep_code).toLowerCase().indexOf(q) >= 0;
+    });
+    if (!list.length) { dd.innerHTML = '<div class="cb-empty">ไม่พบจุดบริการ</div>'; dd.classList.add('show'); return; }
+    dd.innerHTML = list.map(function (d) {
+      var cnt = d.visit_count === null || d.visit_count === undefined ? '' : UI.num(d.visit_count) + ' ราย';
+      return '<div class="cb-item" data-code="' + esc(d.dep_code) + '" data-name="' + esc(d.dep_name) + '">' +
+        '<span>' + esc(d.dep_name) + '</span><span class="cc">' + esc(cnt) + '</span></div>';
+    }).join('');
+    dd.classList.add('show');
+    $$('#depDD .cb-item').forEach(function (el) {
+      el.addEventListener('mousedown', function (ev) {
+        ev.preventDefault();
+        pickDep(el.dataset.code, el.dataset.name);
+      });
+    });
+  }
+
+  function pickDep(code, name) {
+    state.dep = code;
+    $('#depSel').value = code;
+    $('#depSearch').value = code ? name : '';
+    $('#depDD').classList.remove('show');
+    refresh();
+  }
+
+  function bindDepCombo() {
+    var inp = $('#depSearch');
+    var dd = $('#depDD');
+    inp.addEventListener('focus', function () { renderDepList(''); });
+    inp.addEventListener('input', function () { renderDepList(inp.value); });
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { dd.classList.remove('show'); inp.blur(); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        var first = dd.querySelector('.cb-item');
+        if (first) pickDep(first.dataset.code, first.dataset.name);
+      }
+    });
+    inp.addEventListener('blur', function () {
+      setTimeout(function () {
+        dd.classList.remove('show');
+        // คืนข้อความให้ตรงกับค่าที่เลือกจริง (กันพิมพ์ค้างแล้วไม่ได้เลือก)
+        var cur = state.dep;
+        var found = (state.deps || []).filter(function (d) { return String(d.dep_code) === String(cur); })[0];
+        inp.value = (cur && found) ? found.dep_name : '';
+      }, 150);
+    });
   }
 
   async function loadLookups() {
@@ -497,6 +551,7 @@
       '</div></div>';
 
     var changed = false;
+    var defDoctor = { code: '', name: '' };   // แพทย์เริ่มต้นจาก ovst.doctor
     var close = function () { root.innerHTML = ''; if (changed) refresh(); };
     $('#dgClose').addEventListener('click', close);
     $('#dgDone').addEventListener('click', close);
@@ -518,7 +573,7 @@
             '<td class="t-mono bold">' + esc(d.icd10) + '</td>' +
             '<td class="small">' + esc(d.name || '-') + '</td>' +
             '<td><select class="select dg-dt" data-icd="' + esc(d.icd10) + '" data-old="' + esc(d.diagtype) + '">' + dtOptions(d.diagtype) + '</select></td>' +
-            '<td class="small">' + esc(d.doctor_name || d.doctor || '-') + '</td>' +
+            '<td style="min-width:180px"><input class="input dg-doc" data-icd="' + esc(d.icd10) + '" data-dt="' + esc(d.diagtype) + '" data-code="' + esc(d.doctor) + '" value="' + esc(d.doctor_name || d.doctor || '') + '" placeholder="ค้นหาแพทย์…" autocomplete="off"></td>' +
             '<td class="t-right"><button class="btn btn-ghost btn-sm dg-del" data-icd="' + esc(d.icd10) + '" data-dt="' + esc(d.diagtype) + '" title="ลบ">🗑️</button></td>' +
             '</tr>';
         });
@@ -527,11 +582,14 @@
 
       // เพิ่มการวินิจฉัยใหม่
       h += '<div class="sec-title" style="font-size:12.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--violet-600);margin:18px 0 12px">เพิ่มการวินิจฉัย</div>';
-      h += '<div class="fgrid" style="display:grid;grid-template-columns:2fr 1.3fr auto;gap:10px;align-items:end">' +
+      h += '<div class="fgrid" style="display:grid;grid-template-columns:1.8fr 1fr 1.4fr auto;gap:10px;align-items:end">' +
         '<div class="field" style="margin:0"><label>ค้นหา ICD-10 / ชื่อโรค</label>' +
         '<div class="icd-wrap"><input class="input" id="dgIcd" placeholder="เช่น J00 หรือ ไข้หวัด" autocomplete="off">' +
         '<div class="icd-list" id="dgIcdList"></div></div><input type="hidden" id="dgIcdCode"></div>' +
         '<div class="field" style="margin:0"><label>ประเภท</label><select class="select" id="dgAddType">' + dtOptions('1') + '</select></div>' +
+        '<div class="field" style="margin:0"><label>แพทย์</label>' +
+        '<input class="input" id="dgAddDoc" placeholder="ค้นหาแพทย์…" autocomplete="off" value="' + esc(defDoctor.name || defDoctor.code || '') + '">' +
+        '<input type="hidden" id="dgAddDocCode" value="' + esc(defDoctor.code || '') + '"></div>' +
         '<button class="btn btn-primary" id="dgAdd">➕ เพิ่ม</button>' +
         '</div>';
 
@@ -550,6 +608,18 @@
           } catch (e) { if (!guardExpiry(e)) UI.toast('แก้ไขไม่สำเร็จ', e.message, 'err'); }
         });
       });
+      // แก้ไขแพทย์รายรายการ (combobox ค้นหา)
+      $$('#dgBody input.dg-doc').forEach(function (inp) {
+        bindDoctorSearch(inp, async function (code, name) {
+          try {
+            var r = await API.call('diag.doctor', { vn: vn, icd10: inp.dataset.icd, diagtype: inp.dataset.dt, doctor: code });
+            changed = true;
+            UI.toast('เปลี่ยนแพทย์แล้ว', name, 'ok', 1400);
+            render(r.diags);
+          } catch (e) { if (!guardExpiry(e)) UI.toast('แก้ไขแพทย์ไม่สำเร็จ', e.message, 'err', 5000); }
+        });
+      });
+
       $$('#dgBody button.dg-del').forEach(function (b) {
         b.addEventListener('click', async function () {
           if (!window.confirm('ลบการวินิจฉัย ' + b.dataset.icd + ' ?')) return;
@@ -592,12 +662,19 @@
         if (!e.target.closest('.icd-wrap')) { var b = $('#dgIcdList'); if (b) b.classList.remove('show'); }
       });
 
+      // แพทย์สำหรับเพิ่ม — ค้นหาได้ (เติมจาก ovst.doctor ให้ก่อนแล้ว)
+      bindDoctorSearch($('#dgAddDoc'), function (dcode, dname) {
+        $('#dgAddDocCode').value = dcode;
+        $('#dgAddDoc').value = dname;
+        $('#dgAddDoc').dataset.orig = dname;
+      });
+
       $('#dgAdd').addEventListener('click', async function () {
         var code = $('#dgIcdCode').value || $('#dgIcd').value.trim().split(' ')[0];
         if (!code) { UI.toast('ยังไม่ได้เลือก ICD-10', '', 'warn'); return; }
         UI.busy(this, true, 'กำลังเพิ่ม…');
         try {
-          var r = await API.call('diag.add', { vn: vn, icd10: code, diagtype: $('#dgAddType').value });
+          var r = await API.call('diag.add', { vn: vn, icd10: code, diagtype: $('#dgAddType').value, doctor: $('#dgAddDocCode').value });
           changed = true;
           if (r.duplicated) UI.toast('มีรหัสนี้อยู่แล้ว', code, 'warn');
           else UI.toast('เพิ่มการวินิจฉัยแล้ว', code, 'ok', 1400);
@@ -611,6 +688,7 @@
 
     try {
       var d = await API.call('data.diags', { vn: vn });
+      defDoctor = d.defaultDoctor || { code: '', name: '' };
       render(d.diags);
     } catch (e) {
       if (guardExpiry(e)) return;
@@ -685,7 +763,7 @@
     docActive = null;
   }
 
-  async function loadDoctors(inp) {
+  async function loadDoctors(inp, onPick) {
     var dd = ensureDocDD();
     positionDocDD(inp);
     dd.classList.add('show');
@@ -703,7 +781,8 @@
       Array.prototype.forEach.call(dd.querySelectorAll('.doc-item'), function (el) {
         el.addEventListener('mousedown', function (ev) {    // mousedown ก่อน blur
           ev.preventDefault();
-          pickDoctor(inp, el.dataset.code, el.dataset.name);
+          closeDocDD();
+          onPick(el.dataset.code, el.dataset.name);
         });
       });
     } catch (e) {
@@ -712,7 +791,6 @@
   }
 
   async function pickDoctor(inp, code, name) {
-    closeDocDD();
     if (String(code) === String(inp.dataset.code || '')) { inp.value = name; return; }  // ไม่เปลี่ยน
     var td = inp.closest('td');
 
@@ -747,17 +825,39 @@
 
   function bindDoctorCell(inp) {
     inp.dataset.orig = inp.value;
-    inp.addEventListener('focus', function () { docActive = inp; loadDoctors(inp); });
+    var onPick = function (code, name) { pickDoctor(inp, code, name); };
+    inp.addEventListener('focus', function () { docActive = inp; loadDoctors(inp, onPick); });
     inp.addEventListener('input', function () {
       docActive = inp;
       clearTimeout(docTimer);
-      docTimer = setTimeout(function () { loadDoctors(inp); }, 250);
+      docTimer = setTimeout(function () { loadDoctors(inp, onPick); }, 250);
     });
     inp.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { inp.value = inp.dataset.orig; closeDocDD(); inp.blur(); }
     });
     inp.addEventListener('blur', function () {
       // ปิด dropdown และคืนชื่อเดิมถ้าไม่ได้เลือกจากรายการ (ต้องเลือกเพื่อให้ได้รหัส)
+      setTimeout(function () {
+        if (inp.value !== inp.dataset.orig) inp.value = inp.dataset.orig;
+        if (docActive === inp) closeDocDD();
+      }, 150);
+    });
+  }
+
+  /** ผูก combobox ค้นหาแพทย์แบบทั่วไป (ใช้ในหน้าต่างแก้ไข Diag) — onPick(code,name) */
+  function bindDoctorSearch(inp, onPick) {
+    inp.dataset.orig = inp.value;
+    var pick = function (code, name) { onPick(code, name); };
+    inp.addEventListener('focus', function () { docActive = inp; loadDoctors(inp, pick); });
+    inp.addEventListener('input', function () {
+      docActive = inp;
+      clearTimeout(docTimer);
+      docTimer = setTimeout(function () { loadDoctors(inp, pick); }, 250);
+    });
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { inp.value = inp.dataset.orig; closeDocDD(); inp.blur(); }
+    });
+    inp.addEventListener('blur', function () {
       setTimeout(function () {
         if (inp.value !== inp.dataset.orig) inp.value = inp.dataset.orig;
         if (docActive === inp) closeDocDD();

@@ -229,8 +229,12 @@
           <input class="input" type="date" id="dTo">
         </div>
         <div class="fg grow">
-          <label for="depSel">จุดบริการ (ovst.main_dep)</label>
-          <select class="select" id="depSel"><option value="">— ทุกจุดบริการ —</option></select>
+          <label for="depSearch">จุดบริการ (ovst.main_dep)</label>
+          <div class="cb-wrap">
+            <input class="input" type="text" id="depSearch" placeholder="— ทุกจุดบริการ —" autocomplete="off">
+            <input type="hidden" id="depSel" value="">
+            <div class="cb-dd" id="depDD"></div>
+          </div>
         </div>
         <div class="fg" id="fgStatus">
           <label for="stSel">สถานะข้อมูล</label>

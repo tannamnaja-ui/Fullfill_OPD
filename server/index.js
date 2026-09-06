@@ -28,11 +28,11 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 /* ---------------- แผนที่เส้นทางที่เข้ารหัส ---------------- */
 const ENDPOINTS = [
   'settings.get', 'settings.test', 'settings.save', 'settings.token',
-  'auth.login', 'auth.bms', 'auth.me', 'auth.logout',
+  'auth.login', 'auth.bms', 'auth.bmsresume', 'auth.me', 'auth.logout',
   'data.departments', 'data.dashboard', 'data.visits', 'data.visit',
   'data.lookup', 'data.icd10', 'data.doctors', 'data.audit',
   'data.checklist', 'save.field',
-  'data.diags', 'diag.add', 'diag.update', 'diag.delete',
+  'data.diags', 'diag.add', 'diag.update', 'diag.doctor', 'diag.delete',
   'save.visit'
 ];
 const ROUTE_MAP = {};      // ชื่อ -> รหัส
@@ -45,7 +45,7 @@ for (const name of ENDPOINTS) {
 
 /** endpoint ที่เรียกได้ก่อน login */
 const OPEN_ENDPOINTS = new Set([
-  'settings.get', 'settings.test', 'settings.save', 'settings.token', 'auth.login', 'auth.bms'
+  'settings.get', 'settings.test', 'settings.save', 'settings.token', 'auth.login', 'auth.bms', 'auth.bmsresume'
 ]);
 
 /* ---------------- แคช config การเชื่อมต่อ BMS ต่อ session (เก็บ auth key ฝั่ง server เท่านั้น) ---------------- */
@@ -94,6 +94,7 @@ function renderPage(file, res) {
     k: cfg.token || ('SETUP-' + APP_SECRET.slice(0, 16)),
     setup: !cfg.token,
     hosp: cfg.hospCode || '',
+    bmsSaved: !!cfg.bmsSession,   // มี BMS session ที่จำไว้ → เข้าอัตโนมัติได้เลย
     ep: '/q/'
   };
   let html = fs.readFileSync(path.join(PUBLIC_DIR, file), 'utf8');
@@ -156,7 +157,7 @@ app.post('/q/:rid', async (req, res) => {
     // ยังไม่ตั้งค่า DB/token: ใช้กุญแจเริ่มต้น อนุญาตหน้าตั้งค่า + เข้าระบบด้วย BMS session
     // (endpoint หลัง login ยังต้องมี BMS session ที่ถูกต้องเสมอ — ตรวจด้านล่าง)
     apiToken = 'SETUP-' + APP_SECRET.slice(0, 16);
-    const bmsFlow = name === 'auth.bms' || name === 'auth.me' || name === 'auth.logout' ||
+    const bmsFlow = name === 'auth.bms' || name === 'auth.bmsresume' || name === 'auth.me' || name === 'auth.logout' ||
                     name.startsWith('data.') || name.startsWith('save.') || name.startsWith('diag.');
     if (!name.startsWith('settings.') && !bmsFlow) {
       return fail(res, 401, 'ยังไม่ได้ตั้งค่าการเชื่อมต่อและ token');
@@ -270,6 +271,22 @@ async function handle(name, p, session, req, res) {
       const r = await bms.retrieveSession(sid);
       if (!r.ok) { const e = new Error(r.error); e.status = r.expired ? 440 : 401; throw e; }
       cacheBms(sid, r.api, r.user);
+      cfgStore.setBmsSession(sid);   // จำ BMS session ไว้ → ครั้งต่อไปเข้าได้เลยไม่ต้อง login
+      const token = secure.signSession({ u: r.user.username, n: r.user.name, id: r.user.officerId, mode: 'bms', bms: sid }, APP_SECRET, 8 * 3600);
+      res.cookie('ffs', token, { httpOnly: true, sameSite: 'lax', maxAge: 8 * 3600 * 1000 });
+      return { session: token, user: r.user, mode: 'bms' };
+    }
+
+    /* ---- เข้าระบบอัตโนมัติจาก BMS session ที่จำไว้ (ไม่ต้อง login) ---- */
+    case 'auth.bmsresume': {
+      const sid = cfgStore.getBmsSession();
+      if (!sid) { const e = new Error('ยังไม่มี BMS session ที่จำไว้'); e.status = 401; throw e; }
+      const r = await bms.retrieveSession(sid);
+      if (!r.ok) {
+        cfgStore.setBmsSession('');   // session หมดอายุ → ล้างทิ้ง
+        const e = new Error(r.error); e.status = r.expired ? 440 : 401; throw e;
+      }
+      cacheBms(sid, r.api, r.user);
       const token = secure.signSession({ u: r.user.username, n: r.user.name, id: r.user.officerId, mode: 'bms', bms: sid }, APP_SECRET, 8 * 3600);
       res.cookie('ffs', token, { httpOnly: true, sameSite: 'lax', maxAge: 8 * 3600 * 1000 });
       return { session: token, user: r.user, mode: 'bms' };
@@ -280,6 +297,7 @@ async function handle(name, p, session, req, res) {
 
     case 'auth.logout':
       res.clearCookie('ffs');
+      if (session && session.mode === 'bms') cfgStore.setBmsSession('');   // ออกจากระบบ BMS → เลิกจำ
       return { loggedOut: true };
 
     /* ---- ข้อมูล ---- */
@@ -355,7 +373,7 @@ async function handle(name, p, session, req, res) {
       const cfg = await contextFor(session);
       const vn = String(p.vn || '');
       if (!vn) { const e = new Error('ไม่พบ VN'); e.status = 400; throw e; }
-      return { vn, diags: await opd.diagsFull(cfg, vn) };
+      return { vn, diags: await opd.diagsFull(cfg, vn), defaultDoctor: await opd.getVisitDoctor(cfg, vn) };
     }
 
     case 'diag.add': {
@@ -371,6 +389,13 @@ async function handle(name, p, session, req, res) {
       const cfg = await contextFor(session);
       const vn = String(p.vn || '');
       await opd.updateDiagType(cfg, vn, p.icd10, p.oldType, p.diagtype);
+      return { updated: true, diags: await opd.diagsFull(cfg, vn) };
+    }
+
+    case 'diag.doctor': {
+      const cfg = await contextFor(session);
+      const vn = String(p.vn || '');
+      await opd.updateDiagDoctor(cfg, vn, p.icd10, p.diagtype, p.doctor);
       return { updated: true, diags: await opd.diagsFull(cfg, vn) };
     }
 

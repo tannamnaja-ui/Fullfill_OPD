@@ -17,6 +17,7 @@ const DEFAULT = {
   password: '',
   hospCode: '',
   token: '',
+  bmsSession: '',
   updatedAt: null
 };
 
@@ -62,6 +63,7 @@ function load() {
   }
   cache = Object.assign({}, DEFAULT, raw);
   cache.password = decField(cache.password);
+  cache.bmsSession = decField(cache.bmsSession);
   return cache;
 }
 
@@ -71,10 +73,14 @@ function save(cfg) {
   const next = Object.assign({}, cur, cfg, { updatedAt: new Date().toISOString() });
   next.port = parseInt(next.port, 10) || (next.driver === 'postgres' ? 5432 : 3306);
   cache = next;
-  const onDisk = Object.assign({}, next, { password: encField(next.password) });
+  const onDisk = Object.assign({}, next, { password: encField(next.password), bmsSession: encField(next.bmsSession) });
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(onDisk, null, 2), 'utf8');
   return next;
 }
+
+/** จำ / ล้าง BMS session ที่ใช้เข้าระบบอัตโนมัติ */
+function setBmsSession(sid) { return save({ bmsSession: String(sid || '') }); }
+function getBmsSession() { return load().bmsSession || ''; }
 
 /** ค่าที่ส่งกลับหน้าจอ (ปกปิดรหัสผ่านจริงด้วย placeholder) */
 function publicView() {
@@ -83,8 +89,9 @@ function publicView() {
     driver: c.driver, host: c.host, port: c.port, database: c.database,
     username: c.username, password: c.password ? '********' : '',
     hospCode: c.hospCode, token: c.token, updatedAt: c.updatedAt,
-    configured: !!(c.host && c.database && c.username && c.token)
+    configured: !!(c.host && c.database && c.username && c.token),
+    bmsSaved: !!c.bmsSession
   };
 }
 
-module.exports = { load, save, publicView, appSecret, DEFAULT, CONFIG_FILE };
+module.exports = { load, save, publicView, appSecret, DEFAULT, CONFIG_FILE, setBmsSession, getBmsSession };

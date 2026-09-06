@@ -244,6 +244,17 @@ async function diagsFull(cfg, vn) {
   }));
 }
 
+/** แพทย์เริ่มต้นของ visit (ovst.doctor) พร้อมชื่อ */
+async function getVisitDoctor(cfg, vn) {
+  try {
+    const rows = await db.query(cfg,
+      "SELECT o.doctor AS code, COALESCE(dc.name,'') AS name " +
+      'FROM ovst o LEFT JOIN doctor dc ON dc.code = o.doctor WHERE o.vn = ? LIMIT 1', [vn]);
+    if (!rows.length) return { code: '', name: '' };
+    return { code: String(rows[0].code === null || rows[0].code === undefined ? '' : rows[0].code), name: rows[0].name || '' };
+  } catch (e) { return { code: '', name: '' }; }
+}
+
 /** เพิ่มวินิจฉัยด้วย vn (ดึง hn/vstdate จาก ovst ให้เอง) */
 async function addDiagVn(cfg, vn, icd10, diagtype, doctorCode) {
   const ov = await db.query(cfg, 'SELECT hn, vstdate FROM ovst WHERE vn = ? LIMIT 1', [vn]);
@@ -260,6 +271,17 @@ async function updateDiagType(cfg, vn, icd10, oldType, newType) {
   const ot = String(oldType || '').trim();
   if (ot) return db.execute(cfg, 'UPDATE ovstdiag SET diagtype = ? WHERE vn = ? AND icd10 = ? AND diagtype = ?', [nt, String(vn), code, ot]);
   return db.execute(cfg, 'UPDATE ovstdiag SET diagtype = ? WHERE vn = ? AND icd10 = ?', [nt, String(vn), code]);
+}
+
+/** เปลี่ยนแพทย์ของการวินิจฉัย (เจาะจงเรคคอร์ดด้วย icd10 + diagtype) */
+async function updateDiagDoctor(cfg, vn, icd10, diagtype, doctor) {
+  const code = String(icd10 || '').trim().toUpperCase();
+  const dc = String(doctor || '').trim();
+  if (!code) { const e = new Error('ไม่ได้ระบุรหัส ICD-10'); e.status = 400; throw e; }
+  if (!dc) { const e = new Error('กรุณาเลือกแพทย์'); e.status = 400; throw e; }
+  const dt = String(diagtype || '').trim();
+  if (dt) return db.execute(cfg, 'UPDATE ovstdiag SET doctor = ? WHERE vn = ? AND icd10 = ? AND diagtype = ?', [dc, String(vn), code, dt]);
+  return db.execute(cfg, 'UPDATE ovstdiag SET doctor = ? WHERE vn = ? AND icd10 = ?', [dc, String(vn), code]);
 }
 
 /** ลบวินิจฉัย (เจาะจงเรคคอร์ดด้วย diagtype ถ้าระบุ) */
@@ -535,5 +557,5 @@ module.exports = {
   RULES, RULE_META, evaluate, departments, visits, getVisit, summarize,
   lookup, searchIcd10, diagsOf, saveScreen, saveVisitFields, addDiag, sqlFor,
   CHECK_FIELDS, CHECK_META, CHECK_KEYS, checkList, getCheckRow, summarizeCheck, saveCheckField, evalCheck,
-  searchDoctors, diagsFull, addDiagVn, updateDiagType, deleteDiag
+  searchDoctors, diagsFull, getVisitDoctor, addDiagVn, updateDiagType, updateDiagDoctor, deleteDiag
 };
