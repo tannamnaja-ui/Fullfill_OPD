@@ -14,7 +14,8 @@
     rules: [],
     lookups: null,
     visits: [],
-    deps: []
+    deps: [],
+    dentalLk: null
   };
 
   /** ถ้า session หมดอายุ (โดยเฉพาะ BMS) ให้กลับไปหน้า login */
@@ -112,18 +113,28 @@
     location.href = '/';
   }
 
+  var PAGE_TITLE = {
+    dashboard: 'แดชบอร์ดข้อมูลที่ลงเพิ่ม',
+    check: 'ตรวจสอบและเพิ่มข้อมูล OPD',
+    dental: 'ตรวจข้อมูลทันตกรรม'
+  };
+  var PAGE_SUB = {
+    dashboard: 'ภาพรวมความสมบูรณ์ของข้อมูลผู้รับบริการ และรายการที่ลงเพิ่มผ่านระบบ',
+    check: 'ตรวจสอบรายการที่ข้อมูลไม่ครบ และบันทึกข้อมูลเพิ่มเติมเข้าฐานข้อมูล',
+    dental: 'ตรวจสอบความครบถ้วนของข้อมูลทันตกรรม (dental_care) — ช่องว่างแดงแก้ได้ทันที'
+  };
+
   function go(page) {
     state.page = page;
     $$('.nav-item').forEach(function (b) { b.classList.toggle('active', b.dataset.page === page); });
     var dash = page === 'dashboard';
-    $('#pageDashboard').classList.toggle('hidden', !dash);
-    $('#pageCheck').classList.toggle('hidden', dash);
+    $('#pageDashboard').classList.toggle('hidden', page !== 'dashboard');
+    $('#pageCheck').classList.toggle('hidden', page !== 'check');
+    $('#pageDental').classList.toggle('hidden', page !== 'dental');
     $('#fgStatus').classList.toggle('hidden', dash);
     $('#fgSearch').classList.toggle('hidden', dash);
-    $('#pageTitle').textContent = dash ? 'แดชบอร์ดข้อมูลที่ลงเพิ่ม' : 'ตรวจสอบและเพิ่มข้อมูล';
-    $('#pageSub').textContent = dash
-      ? 'ภาพรวมความสมบูรณ์ของข้อมูลผู้รับบริการ และรายการที่ลงเพิ่มผ่านระบบ'
-      : 'ตรวจสอบรายการที่ข้อมูลไม่ครบ และบันทึกข้อมูลเพิ่มเติมเข้าฐานข้อมูล';
+    $('#pageTitle').textContent = PAGE_TITLE[page] || '';
+    $('#pageSub').textContent = PAGE_SUB[page] || '';
     $('#side').classList.remove('open');
     refresh();
   }
@@ -233,6 +244,17 @@
         if (guardExpiry(e)) return;
         t.innerHTML = errCard(e.message);
       }
+    } else if (state.page === 'dental') {
+      var dt = $('#pageDental');
+      loading(dt);
+      try {
+        if (!state.dentalLk) { try { state.dentalLk = (await API.call('data.dentallookups', {})).lookups; } catch (e2) { state.dentalLk = {}; } }
+        var dd2 = await API.call('data.dentalcheck', Object.assign(params(), { status: state.status, q: state.q }));
+        renderDental(dt, dd2);
+      } catch (e) {
+        if (guardExpiry(e)) return;
+        dt.innerHTML = errCard(e.message);
+      }
     } else {
       var c = $('#pageCheck');
       loading(c);
@@ -323,7 +345,7 @@
     if (!a.entries) {
       html += '<div class="card-pad"><div class="empty"><div class="ico">🗒️</div>' +
         'ยังไม่มีการเพิ่มข้อมูลผ่านระบบในช่วงวันที่ที่เลือก<div class="small mt-8">' +
-        'ไปที่เมนู “ตรวจสอบและเพิ่มข้อมูล” เพื่อเริ่มบันทึก</div></div></div>';
+        'ไปที่เมนู “ตรวจสอบและเพิ่มข้อมูล OPD” เพื่อเริ่มบันทึก</div></div></div>';
     } else {
       html += '<div class="card-pad" style="padding-bottom:6px"><div class="flex gap-14 wrap">';
       a.byUser.slice(0, 8).forEach(function (u) {
@@ -412,7 +434,7 @@
 
     var filtered = d.total !== s.total;
     html += '<div class="card">' +
-      '<div class="card-head"><div class="card-title">📝 ตรวจสอบและเพิ่มข้อมูล' +
+      '<div class="card-head"><div class="card-title">📝 ตรวจสอบและเพิ่มข้อมูล OPD' +
       (filtered ? ' <span class="badge badge-violet small" style="margin-left:6px">แสดง ' + UI.num(d.total) + ' / ' + UI.num(s.total) + ' ตามตัวกรอง</span>' : '') +
       '</div>' +
       '<span class="badge badge-rose small">🟥 ช่องสีแดง = ยังว่าง · แก้ในช่องแล้วกด Enter เพื่อบันทึกทันที</span></div>';
@@ -887,6 +909,237 @@
 
   function cssEsc(s) { return String(s).replace(/["\\]/g, '\\$&'); }
 
+  /* ================= หน้าตรวจข้อมูลทันตกรรม (dental_care) ================= */
+  var DENTAL_VIEW = [
+    { key: 'reccount', label: 'ลำดับ', cls: 't-center nowrap' },
+    { key: 'vstdate', label: 'วันที่', cls: 'nowrap small', fmt: function (v) { return UI.thaiDate(v); } },
+    { key: 'hn', label: 'HN', cls: 't-mono' },
+    { key: 'ptname', label: 'ชื่อผู้ป่วย', cls: 'nowrap' },
+    { key: 'cid', label: 'เลขบัตร ปชช.', cls: 't-mono small' }
+  ];
+
+  function dentalOptions(lookup, cur) {
+    var list = (state.dentalLk && state.dentalLk[lookup]) || [];
+    var c = (cur === null || cur === undefined) ? '' : String(cur);
+    var h = '<option value="">— เลือก —</option>';
+    var known = false;
+    list.forEach(function (o) {
+      if (String(o.code) === c) known = true;
+      h += '<option value="' + esc(o.code) + '"' + (String(o.code) === c ? ' selected' : '') + '>' + esc(o.code) + ' · ' + esc(o.name) + '</option>';
+    });
+    if (c !== '' && !known) h = '<option value="' + esc(c) + '" selected>' + esc(c) + ' · (ค่าปัจจุบัน)</option>' + h;
+    return h;
+  }
+
+  function renderDental(root, d) {
+    var fields = d.fields;
+    state.dentalFields = fields;
+    var allRows = d.rows;
+    state.dentalRows = allRows;
+    var rows = allRows.slice(0, 400);
+    var s = d.summary;
+    var html = '';
+
+    html += '<div class="stats">' +
+      stat('รายการทันตกรรม', UI.num(s.total), 'ช่วงวันที่/จุดบริการที่เลือก', '🦷', '') +
+      stat('ยังไม่ครบถ้วน', UI.num(s.incomplete), 'มีช่องสีแดงต้องเติม', '⚠️', 'peach') +
+      stat('ครบถ้วนแล้ว', UI.num(s.complete), 'ครบ ' + fields.length + ' ช่องที่ตรวจ', '✅', 'mint') +
+      stat('ความสมบูรณ์เฉลี่ย', s.percent + '%', 'จาก ' + fields.length + ' ช่องต่อราย', '💜', 'sky') +
+      '</div>';
+
+    var filtered = d.total !== s.total;
+    html += '<div class="card">' +
+      '<div class="card-head"><div class="card-title">🦷 ตรวจข้อมูลทันตกรรม' +
+      (filtered ? ' <span class="badge badge-violet small" style="margin-left:6px">แสดง ' + UI.num(d.total) + ' / ' + UI.num(s.total) + ' ตามตัวกรอง</span>' : '') +
+      '</div>' +
+      '<div class="flex items-center gap-10">' +
+      '<button class="btn btn-primary btn-sm" id="btnDentalFill">🩹 อัพเดทข้อมูลที่ขาด</button>' +
+      '<span class="badge badge-rose small">🟥 ช่องสีแดง = ยังว่าง · แก้ในช่องแล้วบันทึกทันที</span></div></div>';
+
+    if (!rows.length) {
+      html += '<div class="card-pad"><div class="empty"><div class="ico">🦷</div>' +
+        'ไม่พบรายการทันตกรรมตามเงื่อนไขที่เลือก' +
+        '<div class="small mt-8">ลองเปลี่ยนวันที่ จุดบริการ หรือสถานะข้อมูล</div></div></div>';
+    } else {
+      html += '<div class="table-wrap gridscroll" style="max-height:calc(100vh - 340px);overflow:auto">' +
+        '<table class="tbl grid"><thead><tr>' +
+        '<th class="nowrap">%</th>';
+      DENTAL_VIEW.forEach(function (c) { html += '<th class="nowrap">' + esc(c.label) + '</th>'; });
+      fields.forEach(function (f) { html += '<th class="nowrap edit-h">' + esc(f.label) + '</th>'; });
+      html += '<th class="nowrap">VN</th></tr></thead><tbody>';
+
+      rows.forEach(function (r) {
+        html += '<tr data-vn="' + esc(r.vn) + '">';
+        html += '<td class="t-center nowrap"><span class="pcbadge ' + UI.tone(r._percent) + '">' + r._percent + '%</span></td>';
+        DENTAL_VIEW.forEach(function (c) {
+          var val = c.fmt ? c.fmt(r[c.key]) : cellVal(r[c.key]);
+          html += '<td class="' + c.cls + '">' + esc(val || '-') + '</td>';
+        });
+        fields.forEach(function (f) {
+          var blank = r._missing.indexOf(f.key) >= 0;
+          var w = 'min-width:' + (f.w || 90) + 'px';
+          if (f.type === 'fk') {
+            html += '<td class="editcell dcell' + (blank ? ' blank' : '') + '" style="' + w + '">' +
+              '<select class="select dcin" data-vn="' + esc(r.vn) + '" data-field="' + f.key + '" data-type="fk">' +
+              dentalOptions(f.lookup, r[f.key]) + '</select></td>';
+          } else if (f.type === 'chk') {
+            var cv = (r[f.key] === null || r[f.key] === undefined || String(r[f.key]) === '') ? '' : (Number(r[f.key]) ? '1' : '0');
+            html += '<td class="editcell dcell' + (blank ? ' blank' : '') + '" style="' + w + '">' +
+              '<select class="select dcin" data-vn="' + esc(r.vn) + '" data-field="' + f.key + '" data-type="chk">' +
+              '<option value=""' + (cv === '' ? ' selected' : '') + '>—</option>' +
+              '<option value="1"' + (cv === '1' ? ' selected' : '') + '>ใช่</option>' +
+              '<option value="0"' + (cv === '0' ? ' selected' : '') + '>ไม่</option>' +
+              '</select></td>';
+          } else {
+            var t = f.type === 'int' ? 'number' : 'text';
+            html += '<td class="editcell dcell' + (blank ? ' blank' : '') + '" style="' + w + '">' +
+              '<input class="cin dcin" type="' + t + '" data-vn="' + esc(r.vn) + '" data-field="' + f.key + '" data-type="' + f.type + '"' +
+              (f.type === 'int' ? ' inputmode="numeric"' : '') + ' value="' + esc(cellVal(r[f.key])) + '"></td>';
+          }
+        });
+        html += '<td class="t-mono small">' + esc(r.vn) + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      if (d.total > rows.length) {
+        html += '<div class="card-pad tiny muted t-center">⚡ แสดง ' + UI.num(rows.length) + ' จาก ' + UI.num(d.total) +
+          ' รายการ — เลือกจุดบริการหรือแคบช่วงวันที่เพื่อดูครบ</div>';
+      }
+    }
+    html += '</div>';
+    root.innerHTML = html;
+    bindDentalCells();
+  }
+
+  function bindDentalCells() {
+    var fill = $('#btnDentalFill');
+    if (fill) fill.addEventListener('click', openDentalFillModal);
+    // select (fk/chk) → บันทึกเมื่อ change
+    $$('#pageDental select.dcin').forEach(function (sel) {
+      sel.dataset.orig = sel.value;
+      sel.addEventListener('change', function () { commitDental(sel); });
+    });
+    // input (int/text) → บันทึกเมื่อ Enter/blur
+    $$('#pageDental input.dcin').forEach(function (inp) {
+      inp.dataset.orig = inp.value;
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        else if (e.key === 'Escape') { inp.value = inp.dataset.orig; inp.blur(); }
+      });
+      inp.addEventListener('blur', function () { commitDental(inp); });
+    });
+  }
+
+  async function commitDental(el) {
+    var val = String(el.value).trim();
+    if (val === (el.dataset.orig || '')) return;
+    var td = el.closest('td');
+
+    // ช่องที่มีข้อมูลอยู่แล้ว (ไม่แดง) → ยืนยันก่อนแก้ทับ ; ช่องแดง → บันทึกเลย
+    if (!td.classList.contains('blank')) {
+      var okEdit = window.confirm('ช่องนี้มีข้อมูลอยู่แล้ว\n\nเดิม : ' + (el.dataset.orig || '(ว่าง)') + '\nใหม่ : ' + (val || '(ว่าง)') + '\n\nยืนยันการแก้ไขทับข้อมูลเดิมหรือไม่?');
+      if (!okEdit) { el.value = el.dataset.orig; return; }
+    }
+
+    el.disabled = true; td.classList.add('saving');
+    try {
+      var r = await API.call('save.dentalfield', { vn: el.dataset.vn, field: el.dataset.field, value: val });
+      el.dataset.orig = el.value = (r.value === null || r.value === undefined) ? val : String(r.value);
+      td.classList.remove('blank', 'err');
+      td.classList.add('saved');
+      setTimeout(function () { td.classList.remove('saved'); }, 1200);
+      if (r.row) applyDentalRow(el.dataset.vn, r.row);
+    } catch (e) {
+      if (guardExpiry(e)) return;
+      td.classList.add('err');
+      UI.toast('บันทึกไม่สำเร็จ', e.message, 'err', 5000);
+      el.value = el.dataset.orig;
+    } finally {
+      el.disabled = false; td.classList.remove('saving');
+    }
+  }
+
+  function applyDentalRow(vn, row) {
+    var tr = document.querySelector('#pageDental tr[data-vn="' + cssEsc(vn) + '"]');
+    if (!tr) return;
+    var badge = tr.querySelector('.pcbadge');
+    if (badge) { badge.textContent = row._percent + '%'; badge.className = 'pcbadge ' + UI.tone(row._percent); }
+    (state.dentalFields || []).forEach(function (f) {
+      var cell = tr.querySelector('.dcin[data-field="' + f.key + '"]');
+      if (!cell) return;
+      var td = cell.closest('td');
+      td.classList.toggle('blank', row._missing.indexOf(f.key) >= 0);
+    });
+  }
+
+  /* ---------- อัพเดทข้อมูลที่ขาด (เติมค่าเริ่มต้นตาม vn) ---------- */
+  function openDentalFillModal() {
+    var incomplete = (state.dentalRows || []).filter(function (r) { return !r._complete; });
+    var root = $('#modalRoot');
+
+    if (!incomplete.length) {
+      UI.toast('ไม่มีรายการที่ไม่ครบถ้วน', 'ทุกคนในรายการที่แสดงข้อมูลครบแล้ว', 'ok');
+      return;
+    }
+
+    var rowsHtml = incomplete.map(function (r) {
+      return '<tr>' +
+        '<td class="t-center"><input type="checkbox" class="dfchk" data-vn="' + esc(r.vn) + '" checked></td>' +
+        '<td class="t-mono">' + esc(r.hn) + '</td>' +
+        '<td>' + esc(r.ptname || '-') + '</td>' +
+        '<td class="small nowrap">' + UI.thaiDate(r.vstdate) + '</td>' +
+        '<td class="t-center"><span class="pcbadge ' + UI.tone(r._percent) + '">' + r._percent + '%</span></td>' +
+        '<td class="t-center small muted">ขาด ' + r._missing.length + '</td>' +
+        '<td class="t-mono small">' + esc(r.vn) + '</td></tr>';
+    }).join('');
+
+    root.innerHTML = '<div class="modal-back" id="dfBack"><div class="modal" style="max-width:760px">' +
+      '<div class="modal-head"><div><h3 style="font-size:17px">อัพเดทข้อมูลที่ขาด</h3>' +
+      '<div class="small muted">เติมค่าเริ่มต้นให้ช่องที่ว่าง เฉพาะรายที่ติ๊ก (ไม่สนวันที่)</div></div>' +
+      '<button class="x-btn" id="dfClose">✕</button></div>' +
+      '<div class="modal-body">' +
+      '<div class="flex items-center justify-between mb-8">' +
+      '<label class="flex items-center gap-6" style="cursor:pointer"><input type="checkbox" id="dfAll" checked> <span class="small bold">เลือกทั้งหมด</span></label>' +
+      '<span class="small muted">พบไม่ครบถ้วน <b id="dfCount">' + incomplete.length + '</b> ราย</span></div>' +
+      '<div class="table-wrap" style="max-height:52vh;overflow:auto"><table class="tbl"><thead><tr>' +
+      '<th class="t-center">เลือก</th><th>HN</th><th>ชื่อผู้ป่วย</th><th>วันที่</th><th class="t-center">%</th><th class="t-center">ช่องขาด</th><th>VN</th>' +
+      '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div></div>' +
+      '<div class="modal-foot"><span class="tiny muted" style="margin-right:auto">เติม: สถานที่บริการ, จำนวนฟัน/รักษาที่เป็นค่าว่างหรือติดลบ = 0, สภาวะปริทันต์ = 9</span>' +
+      '<button class="btn btn-ghost" id="dfCancel">ยกเลิก</button>' +
+      '<button class="btn btn-primary" id="dfRun">⚙️ จัดการอัพเดทข้อมูล</button></div>' +
+      '</div></div>';
+
+    var close = function () { root.innerHTML = ''; };
+    $('#dfClose').addEventListener('click', close);
+    $('#dfCancel').addEventListener('click', close);
+    $('#dfBack').addEventListener('click', function (e) { if (e.target.id === 'dfBack') close(); });
+
+    $('#dfAll').addEventListener('change', function () {
+      var on = this.checked;
+      $$('#modalRoot .dfchk').forEach(function (c) { c.checked = on; });
+    });
+
+    $('#dfRun').addEventListener('click', async function () {
+      var vns = $$('#modalRoot .dfchk').filter(function (c) { return c.checked; }).map(function (c) { return c.dataset.vn; });
+      if (!vns.length) { UI.toast('ยังไม่ได้เลือกรายการ', '', 'warn'); return; }
+      if (!window.confirm('อัพเดทข้อมูลที่ขาดของ ' + vns.length + ' ราย?')) return;
+      UI.busy(this, true, 'กำลังอัพเดท…');
+      try {
+        var r = await API.call('save.dentalfill', { vns: vns });
+        var msg = 'แก้ไข ' + UI.num(r.affected) + ' ค่า จาก ' + vns.length + ' ราย';
+        if (r.created) msg += ' · สร้างระเบียนใหม่ ' + r.created + ' ราย';
+        if (r.createFail) msg += ' · สร้างไม่ได้ ' + r.createFail + ' ราย';
+        UI.toast('อัพเดทข้อมูลแล้ว', msg, r.createFail ? 'warn' : 'ok', 6000);
+        if (r.createErr) UI.toast('สร้างระเบียน dental_care ไม่สำเร็จ', r.createErr, 'err', 12000);
+        close();
+        refresh();
+      } catch (e) {
+        if (guardExpiry(e)) return;
+        UI.toast('อัพเดทไม่สำเร็จ', e.message, 'err', 6000);
+        UI.busy(this, false);
+      }
+    });
+  }
 
   boot();
 })();

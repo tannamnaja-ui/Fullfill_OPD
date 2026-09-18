@@ -18,6 +18,7 @@ const cfgStore = require('./lib/config');
 const db = require('./lib/db');
 const auth = require('./lib/auth');
 const opd = require('./lib/opd');
+const dental = require('./lib/dental');
 const audit = require('./lib/audit');
 const bms = require('./lib/bms');
 
@@ -33,6 +34,7 @@ const ENDPOINTS = [
   'data.lookup', 'data.icd10', 'data.doctors', 'data.audit',
   'data.checklist', 'save.field',
   'data.diags', 'diag.add', 'diag.update', 'diag.doctor', 'diag.delete',
+  'data.dentalcheck', 'data.dentallookups', 'save.dentalfield', 'save.dentalfill',
   'save.visit'
 ];
 const ROUTE_MAP = {};      // ชื่อ -> รหัส
@@ -259,8 +261,9 @@ async function handle(name, p, session, req, res) {
         const e = new Error(r.reason); e.status = r.dbError ? 502 : 401; throw e;
       }
       clearFail(key);
-      const token = secure.signSession({ u: r.user.username, n: r.user.name, id: r.user.officerId }, APP_SECRET, 8 * 3600);
-      res.cookie('ffs', token, { httpOnly: true, sameSite: 'lax', maxAge: 8 * 3600 * 1000 });
+      // login ด้วย username/password (officer) → session ไม่หมดอายุ (เครื่องหลักเปิดค้างตลอด)
+      const token = secure.signSession({ u: r.user.username, n: r.user.name, id: r.user.officerId }, APP_SECRET, 0);
+      res.cookie('ffs', token, { httpOnly: true, sameSite: 'lax', maxAge: 10 * 365 * 24 * 3600 * 1000 });
       return { session: token, user: r.user };
     }
 
@@ -406,6 +409,55 @@ async function handle(name, p, session, req, res) {
       audit.write({ vn, hn: '', vstdate: '', main_dep: '', dep_name: '', patient: '',
         user: session.u, userName: session.n, fields: ['diag-:' + String(p.icd10 || '').toUpperCase()] });
       return { deleted: !!r.affected, diags: await opd.diagsFull(cfg, vn) };
+    }
+
+    /* ---- ตรวจข้อมูลทันตกรรม (dental_care) ---- */
+    case 'data.dentalcheck': {
+      const cfg = await contextFor(session);
+      const from = dateOr(p.from), to = dateOr(p.to || p.from);
+      const dep = p.dep ? String(p.dep) : '';
+      const all = await dental.dentalList(cfg, from, to, dep, 20000);
+      const summary = dental.summarizeDental(all);
+      let rows = all;
+      if (p.status === 'incomplete') rows = rows.filter((r) => !r._complete);
+      else if (p.status === 'complete') rows = rows.filter((r) => r._complete);
+      const q = String(p.q || '').trim().toLowerCase();
+      if (q) {
+        rows = rows.filter((r) =>
+          String(r.hn || '').toLowerCase().includes(q) ||
+          String(r.vn || '').toLowerCase().includes(q) ||
+          String(r.ptname || '').toLowerCase().includes(q) ||
+          String(r.cid || '').includes(q));
+      }
+      return { from, to, dep, fields: dental.META, summary, grandTotal: all.length, total: rows.length, rows: rows.slice(0, 3000) };
+    }
+
+    case 'data.dentallookups': {
+      const cfg = await contextFor(session);
+      return { lookups: await dental.dentalLookups(cfg) };
+    }
+
+    case 'save.dentalfill': {
+      const cfg = await contextFor(session);
+      const vns = Array.isArray(p.vns) ? p.vns : [];
+      const r = await dental.fillDentalDefaults(cfg, vns);
+      audit.write({
+        vn: '(' + r.vnCount + ' ราย)', hn: '', vstdate: '', main_dep: '', dep_name: '', patient: '',
+        user: session.u, userName: session.n, fields: ['dental-fill: ' + r.affected + ' ค่า']
+      });
+      return r;
+    }
+
+    case 'save.dentalfield': {
+      const cfg = await contextFor(session);
+      const r = await dental.saveDentalField(cfg, String(p.field || ''), p.vn, p.value);
+      const row = await dental.getDentalRow(cfg, String(p.vn || ''));
+      audit.write({
+        vn: String(p.vn || ''), hn: row ? row.hn : '', vstdate: row ? row.vstdate : '',
+        main_dep: '', dep_name: '', patient: row ? row.ptname : '',
+        user: session.u, userName: session.n, fields: ['dental:' + String(p.field || '')]
+      });
+      return { saved: true, value: r.value, row };
     }
 
     case 'save.field': {

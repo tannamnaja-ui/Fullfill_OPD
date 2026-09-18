@@ -295,6 +295,12 @@ td.editcell.blank .cin {
   font-weight: 700; box-shadow: none; caret-color: #b00d1c;
 }
 td.editcell.blank .cin::placeholder { color: #e11d2e; opacity: .85; }
+/* select ในช่องแก้ไข (ทันตกรรม) */
+td.editcell .select { width: 100%; padding: 6px 26px 6px 8px; font-size: 13px; border-radius: 8px; }
+td.editcell.blank .select { border: 2px solid #e11d2e; background: #ffeceb; color: #b00d1c; font-weight: 700; }
+td.editcell.blank .select:focus { border-color: #8a0713; background: #fff; outline: 2px solid #e11d2e; outline-offset: -2px; }
+td.editcell.saved .select { border-color: var(--mint); background: var(--mint-bg); }
+td.editcell.err .select { border-color: var(--rose); background: #fdeef1; }
 /* ตอนคลิก/โฟกัส: ไม่มีเงา แต่เห็นเคอร์เซอร์กะพริบชัด + กรอบเข้มขึ้นบอกว่ากำลังแก้ช่องนี้ */
 td.editcell.blank .cin:focus {
   border-color: #8a0713; background: #fff; color: #8a0713; caret-color: #e11d2e;

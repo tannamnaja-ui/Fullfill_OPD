@@ -68,9 +68,12 @@ function generateToken(hospCode) {
   return String(hospCode || '').trim() + rnd;
 }
 
-/** session token แบบมีลายเซ็น (ไม่ต้องพึ่ง lib ภายนอก) */
+/** session token แบบมีลายเซ็น (ไม่ต้องพึ่ง lib ภายนอก)
+ *  ttlSeconds > 0 = หมดอายุตามเวลา ; ttlSeconds = 0/ไม่ระบุค่าลบ = ไม่มีวันหมดอายุ */
 function signSession(payload, secret, ttlSeconds) {
-  const body = Object.assign({}, payload, { exp: Date.now() + (ttlSeconds || 28800) * 1000 });
+  const body = Object.assign({}, payload);
+  if (ttlSeconds && ttlSeconds > 0) body.exp = Date.now() + ttlSeconds * 1000;
+  // ถ้าไม่กำหนด exp = ไม่หมดอายุ (สำหรับเครื่องหลักที่เปิดค้างตลอด)
   const b = Buffer.from(JSON.stringify(body), 'utf8').toString('base64url');
   const sig = crypto.createHmac('sha256', secret).update(b).digest('base64url');
   return b + '.' + sig;
@@ -83,7 +86,7 @@ function verifySession(tok, secret) {
     const expect = crypto.createHmac('sha256', secret).update(b).digest('base64url');
     if (expect.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(expect), Buffer.from(sig))) return null;
     const body = JSON.parse(Buffer.from(b, 'base64url').toString('utf8'));
-    if (!body.exp || body.exp < Date.now()) return null;
+    if (body.exp && body.exp < Date.now()) return null;   // มี exp และหมดอายุแล้ว → ปฏิเสธ ; ไม่มี exp = ไม่หมดอายุ
     return body;
   } catch (e) { return null; }
 }
