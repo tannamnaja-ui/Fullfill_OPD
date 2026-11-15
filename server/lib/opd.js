@@ -389,7 +389,7 @@ const CHECK_SELECT = [
   "  vt.visit_type_name,",
   "  CAST(oc.cc AS {{CAST}}) AS cc,",
   "  oc.bps, oc.bpd, oc.temperature, oc.bw, oc.height, oc.bmi,",
-  "  o.vn",
+  "{{APPSTAFF}}  o.vn",
   "FROM ovst o",
   "  LEFT OUTER JOIN vn_stat v ON v.vn = o.vn",
   "  LEFT OUTER JOIN opdscreen oc ON oc.vn = o.vn",
@@ -402,9 +402,34 @@ const CHECK_SELECT = [
   "  LEFT OUTER JOIN visit_type vt ON vt.visit_type = o.visit_type"
 ].join('\n');
 
-function checkSelect(cfg) {
+function checkSelect(cfg, hasAppStaff) {
   const castT = cfg.driver === 'postgres' ? 'VARCHAR(250)' : 'CHAR(250)';
-  return CHECK_SELECT.replace(/\{\{CAST\}\}/g, castT);
+  // คอลัมน์ "ผู้บันทึกเพิ่มเติม": ovst.app_staff → officer.officer_login_name → officer.officer_name
+  const appStaff = hasAppStaff
+    ? "  o.app_staff,\n  (SELECT ofc.officer_name FROM officer ofc WHERE ofc.officer_login_name = o.app_staff LIMIT 1) AS app_staff_name,\n"
+    : "  CAST(NULL AS " + castT + ") AS app_staff, CAST(NULL AS " + castT + ") AS app_staff_name,\n";
+  return CHECK_SELECT.replace(/\{\{CAST\}\}/g, castT).replace('{{APPSTAFF}}', appStaff);
+}
+
+/** ovst.app_staff มีอยู่จริงหรือยัง (แคชผล 5 นาที) — กันพังหากยังไม่ได้เพิ่มคอลัมน์ */
+let _appStaffCol = { val: null, at: 0 };
+async function appStaffAvailable(cfg) {
+  const now = Date.now();
+  if (_appStaffCol.val !== null && (now - _appStaffCol.at) < 300000) return _appStaffCol.val;
+  try {
+    const r = await db.query(cfg,
+      "SELECT 1 FROM information_schema.columns WHERE table_name = 'ovst' AND column_name = 'app_staff' LIMIT 1");
+    _appStaffCol = { val: r.length > 0, at: now };
+  } catch (e) { _appStaffCol = { val: false, at: now }; }
+  return _appStaffCol.val;
+}
+
+/** ประทับชื่อผู้บันทึกเพิ่มเติม (login) ลง ovst.app_staff — ปลอดภัย เป็น no-op ถ้ายังไม่มีคอลัมน์ */
+async function stampAppStaff(cfg, vn, login) {
+  if (!vn || !login) return;
+  if (!(await appStaffAvailable(cfg))) return;
+  try { await db.execute(cfg, 'UPDATE ovst SET app_staff = ? WHERE vn = ?', [String(login).slice(0, 150), String(vn)]); }
+  catch (e) { /* เงียบ ไม่ให้กระทบการบันทึกหลัก */ }
 }
 
 /** รพ.หลัก ตรวจเฉพาะสิทธิที่ต้องระบุหน่วยบริการหลัก */
@@ -437,13 +462,16 @@ function decorateCheck(r) {
   return Object.assign({}, r, {
     vstdate: String(r.vstdate).slice(0, 10),
     vsttime: String(r.vsttime || '').slice(0, 8),
+    app_staff: r.app_staff || '',
+    app_staff_name: r.app_staff_name || '',
     _missing: ev.missing, _score: ev.score, _percent: ev.percent, _complete: ev.complete
   });
 }
 
 /** ดึงรายการตรวจสอบตามช่วงวันที่ + จุดบริการ (เฉพาะ OPD: an is null) */
 async function checkList(cfg, from, to, depCode, limit) {
-  let sql = checkSelect(cfg) + '\n WHERE o.vstdate BETWEEN {{D}} AND {{D}} AND o.an is null';
+  const has = await appStaffAvailable(cfg);
+  let sql = checkSelect(cfg, has) + '\n WHERE o.vstdate BETWEEN {{D}} AND {{D}} AND o.an is null';
   const params = [from, to];
   if (depCode) { sql += ' AND o.main_dep = ?'; params.push(depCode); }
   sql += ' ORDER BY o.vn';
@@ -454,7 +482,8 @@ async function checkList(cfg, from, to, depCode, limit) {
 
 /** อ่านแถวเดียว (หลังบันทึก เพื่อส่งค่าล่าสุดกลับ) */
 async function getCheckRow(cfg, vn) {
-  const sql = checkSelect(cfg) + '\n WHERE o.vn = ? LIMIT 1';
+  const has = await appStaffAvailable(cfg);
+  const sql = checkSelect(cfg, has) + '\n WHERE o.vn = ? LIMIT 1';
   const rows = await db.query(cfg, sql, [vn]);
   return rows.length ? decorateCheck(rows[0]) : null;
 }
@@ -557,5 +586,6 @@ module.exports = {
   RULES, RULE_META, evaluate, departments, visits, getVisit, summarize,
   lookup, searchIcd10, diagsOf, saveScreen, saveVisitFields, addDiag, sqlFor,
   CHECK_FIELDS, CHECK_META, CHECK_KEYS, checkList, getCheckRow, summarizeCheck, saveCheckField, evalCheck,
-  searchDoctors, diagsFull, getVisitDoctor, addDiagVn, updateDiagType, updateDiagDoctor, deleteDiag
+  searchDoctors, diagsFull, getVisitDoctor, addDiagVn, updateDiagType, updateDiagDoctor, deleteDiag,
+  stampAppStaff, appStaffAvailable
 };

@@ -124,6 +124,43 @@
   }
   .chip.ok { background: var(--mint-bg); color: #2f7a5d; }
 
+  /* ---------- ผู้ป่วยใน ---------- */
+  .ipd-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+  .ipd-bar .select { width: auto; min-width: 220px; max-width: 320px; padding-top: 7px; padding-bottom: 7px; font-size: 13px; }
+  .ipd-miss { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 18px; border-bottom: 1px solid var(--line); }
+  .ipd-miss .chip { cursor: pointer; border: 1px solid transparent; }
+  .ipd-miss .chip.on { border-color: #b04a63; background: #fff; }
+  .tbl.grid th.fgrp { text-align: center; font-size: 11.5px; background: var(--violet-50); color: var(--violet-700); }
+  td.nreq { background: #f6f5f9; color: var(--ink-mute); }
+  td.nreq .cin { background: transparent; }
+  .cntbtn { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 8px; border: 1px solid var(--violet-200, #d9d0f5);
+    background: #fff; color: var(--violet-700); font-weight: 700; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+  .cntbtn:hover { background: var(--violet-50); }
+  td.rored .cntbtn { border-color: #e11d2e; color: #b00d1c; }
+  /* ชื่อ Pdx: บรรทัดเดียว เลื่อนดูได้ ไม่ขยายช่อง */
+  .pdxname { font-size: 10.5px; color: var(--ink-mute); margin-top: 3px; line-height: 1.3; width: 150px; max-width: 150px;
+    white-space: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding-bottom: 2px; }
+  .pdxname::-webkit-scrollbar { height: 4px; }
+  .pdxname::-webkit-scrollbar-thumb { background: var(--violet-200, #d9d0f5); border-radius: 4px; }
+  /* คำแนะนำ DRG */
+  td.advcell .cntbtn { border-color: #e7b04a; color: #8a5a00; background: #fff8e8; }
+  td.advcell.none .cntbtn { border-color: var(--line); color: #2f7a5d; background: #fff; }
+  .chip.adv { background: #fff3d6; color: #8a5a00; }
+  .adv-sec { margin-bottom: 14px; }
+  .adv-sec h4 { font-size: 14px; margin: 0 0 6px; }
+  .adv-item { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--line); margin-bottom: 6px; background: #fff; font-size: 13px; line-height: 1.45; }
+  .adv-item.order { border-left: 4px solid #7c5cd6; }
+  .adv-item.add { border-left: 4px solid #e7a23a; }
+  .adv-item.check { border-left: 4px solid #8aa0b8; }
+  .adv-item .btn { flex: 0 0 auto; }
+  .adv-note { padding: 8px 12px; border-radius: 8px; background: #fff8e8; color: #8a5a00; font-size: 12.5px; margin-bottom: 12px; }
+  tr.adv-diff td { background: #fff8e8; }
+  .ipd-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 12px; border-radius: 10px; background: var(--violet-50); margin-top: 12px; }
+  .ipd-form .fg { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+  .ipd-form .input, .ipd-form .select { padding: 6px 8px; font-size: 13px; }
+  .mtbl .input, .mtbl .select { padding: 4px 6px; font-size: 12.5px; }
+
   /* ---------- Modal form ---------- */
   .fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0 14px; }
   .need { position: relative; }
@@ -192,6 +229,15 @@
       <button class="nav-item" data-page="dental">
         <span class="ic">🦷</span><span>ตรวจข้อมูลทันตกรรม</span>
       </button>
+      <button class="nav-item" data-page="physio">
+        <span class="ic">🧑‍⚕️</span><span>งานกายภาพบำบัด</span>
+      </button>
+      <button class="nav-item" data-page="anc">
+        <span class="ic">🤰</span><span>งานฝากครรภ์</span>
+      </button>
+      <button class="nav-item" data-page="ipd">
+        <span class="ic">🛏️</span><span>ผู้ป่วยใน</span>
+      </button>
     </nav>
 
     <div class="side-user">
@@ -231,7 +277,7 @@
           <label for="dTo">ถึงวันที่</label>
           <input class="input" type="date" id="dTo">
         </div>
-        <div class="fg grow">
+        <div class="fg grow" id="fgDep">
           <label for="depSearch">จุดบริการ (ovst.main_dep)</label>
           <div class="cb-wrap">
             <input class="input" type="text" id="depSearch" placeholder="— ทุกจุดบริการ —" autocomplete="off">
@@ -260,6 +306,12 @@
       <section id="pageCheck" class="hidden"></section>
       <!-- หน้าตรวจข้อมูลทันตกรรม -->
       <section id="pageDental" class="hidden"></section>
+      <!-- หน้างานกายภาพบำบัด -->
+      <section id="pagePhysio" class="hidden"></section>
+      <!-- หน้างานฝากครรภ์ -->
+      <section id="pageAnc" class="hidden"></section>
+      <!-- หน้าผู้ป่วยใน -->
+      <section id="pageIpd" class="hidden"></section>
     </div>
   </div>
 </div>

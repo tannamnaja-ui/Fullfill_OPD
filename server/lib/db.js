@@ -20,11 +20,16 @@ async function makePool(c) {
   if (c.driver === 'postgres') {
     // ไม่ตั้ง statement_timeout เป็น startup parameter เพราะ PgBouncer (transaction/statement pooling)
     // จะปฏิเสธด้วย error 08P01: unsupported startup parameter
-    return new Pool({
+    const pool = new Pool({
       host: c.host, port: Number(c.port) || 5432, database: c.database,
       user: c.username, password: c.password,
-      max: 8, idleTimeoutMillis: 30000, connectionTimeoutMillis: 12000
+      max: 8, idleTimeoutMillis: 30000, connectionTimeoutMillis: 12000,
+      keepAlive: true
     });
+    // client ที่ว่างอยู่ใน pool ถูกฝั่ง DB/PgBouncer ตัด → ถ้าไม่ดัก error นี้ Node จะ crash ทั้งโปรเซส
+    // pool จะทิ้ง client ตัวนั้นเองและเปิดใหม่เมื่อมี query ถัดไป
+    pool.on('error', (err) => console.warn('[db] idle client error:', err.message));
+    return pool;
   }
   return mysql.createPool({
     host: c.host, port: Number(c.port) || 3306, database: c.database,

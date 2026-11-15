@@ -30,11 +30,11 @@ const FIELDS = [
   { key: 'gum',             col: 'dental_care_gum_type_id',             type: FK,  lookup: 'gum',         label: 'สภาวะปริทันต์', w: 150 },
   { key: 'schooltype',      col: 'dental_care_school_type_id',          type: FK,  lookup: 'school',      label: 'สถานศึกษา', w: 160 },
   { key: 'schoolclass',     col: 'dental_care_school_class_type_id',    type: FK,  lookup: 'schoolclass', label: 'ระดับการศึกษา', w: 150 },
-  { key: 'provider',        col: 'doctor',                              type: TXT, label: 'ผู้ให้บริการ', w: 130 }
+  { key: 'provider',        col: 'doctor',                              type: TXT, label: 'ผู้ให้บริการ', w: 150, ro: true, nameKey: 'provider_name' }
 ];
 const BY_KEY = {};
 FIELDS.forEach((f) => { BY_KEY[f.key] = f; });
-const META = FIELDS.map((f) => ({ key: f.key, label: f.label, type: f.type, lookup: f.lookup || null, w: f.w }));
+const META = FIELDS.map((f) => ({ key: f.key, label: f.label, type: f.type, lookup: f.lookup || null, w: f.w, ro: !!f.ro, nameKey: f.nameKey || null }));
 
 const isBlank = (v) => v === null || v === undefined || String(v).trim() === '';
 
@@ -59,7 +59,8 @@ const SELECT = [
   "  dc.need_pfilling, dc.need_dfilling, dc.need_pextract, dc.need_dextract,",
   "  dc.dental_care_nprosthesis_id AS nprosthesis, dc.permanent_perma, dc.permanent_prost, dc.prosthesis_prost,",
   "  dc.dental_care_gum_type_id AS gum, dc.dental_care_school_type_id AS schooltype,",
-  "  dc.dental_care_school_class_type_id AS schoolclass, dc.doctor AS provider",
+  "  dc.dental_care_school_class_type_id AS schoolclass, dc.doctor AS provider,",
+  "  (SELECT dcx.name FROM doctor dcx WHERE dcx.code = dc.doctor LIMIT 1) AS provider_name",
   "FROM ovst o",
   "  JOIN (SELECT DISTINCT vn FROM dtmain) dm ON dm.vn = o.vn",
   "  LEFT JOIN dental_care dc ON dc.vn = o.vn",
@@ -130,8 +131,10 @@ async function dentalLookups(cfg) {
   const out = {};
   for (const key of Object.keys(LOOKUP_TABLES)) {
     const t = LOOKUP_TABLES[key];
+    // คอลัมน์ชื่อใน HOSxP XE = <ชื่อตาราง>_name (ไม่ใช่ name เฉย ๆ)
+    const nameCol = t.table + '_name';
     try {
-      const rows = await db.query(cfg, 'SELECT ' + t.pk + ' AS code, name FROM ' + t.table + ' ORDER BY ' + t.pk, []);
+      const rows = await db.query(cfg, 'SELECT ' + t.pk + ' AS code, ' + nameCol + ' AS name FROM ' + t.table + ' ORDER BY ' + t.pk, []);
       out[key] = rows.map((r) => ({ code: String(r.code === null ? '' : r.code), name: r.name || '' }));
     } catch (e) { out[key] = []; }
   }

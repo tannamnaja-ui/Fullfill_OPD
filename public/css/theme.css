@@ -102,6 +102,12 @@ a { color: var(--violet-600); }
 .btn-ghost { background: transparent; color: var(--ink-soft); border-color: var(--line); }
 .btn-ghost:hover:not(:disabled) { background: var(--violet-50); color: var(--violet-700); }
 
+.btn-orange {
+  background: linear-gradient(135deg, #f59e0b, #ea7a17);
+  color: #fff; box-shadow: 0 6px 18px rgba(234, 122, 23, .30);
+}
+.btn-orange:hover:not(:disabled) { box-shadow: 0 10px 26px rgba(234, 122, 23, .40); }
+
 .btn-mint { background: var(--mint-bg); color: #2f7a5d; border-color: #c6ecdb; }
 .btn-mint:hover:not(:disabled) { background: #d9f4e9; }
 
@@ -211,6 +217,25 @@ table.tbl tbody tr:last-child td { border-bottom: none; }
 .t-center { text-align: center; }
 .t-mono { font-family: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; }
 
+/* ---------- ปุ่ม EMR (คัดลอกสไตล์จาก diagnosis.html) ---------- */
+.btn.btn-emr {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: linear-gradient(180deg, #2f7fb8, #1f5f8f);
+  border: 1px solid #17486e; color: #fff; font-weight: 600;
+  padding: 5px 14px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  font-family: var(--font); font-size: 13px;
+  box-shadow: 0 3px 0 #17486e, 0 5px 10px rgba(23, 72, 110, .35);
+  transition: transform .08s ease, box-shadow .08s ease;
+}
+.btn.btn-emr:hover {
+  background: linear-gradient(180deg, #3a8ec7, #24699b);
+  box-shadow: 0 3px 0 #17486e, 0 7px 14px rgba(23, 72, 110, .42);
+}
+.btn.btn-emr:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #17486e, 0 2px 5px rgba(23, 72, 110, .3);
+}
+
 /* ---------- Scrollbar เด่นชัดสำหรับตารางตรวจสอบ (เลื่อนซ้าย-ขวา) ---------- */
 .gridscroll { scrollbar-color: var(--violet-500) var(--violet-100); scrollbar-width: auto; }
 .gridscroll::-webkit-scrollbar { width: 16px; height: 18px; }
@@ -295,6 +320,8 @@ td.editcell.blank .cin {
   font-weight: 700; box-shadow: none; caret-color: #b00d1c;
 }
 td.editcell.blank .cin::placeholder { color: #e11d2e; opacity: .85; }
+/* ช่องอ่านอย่างเดียวที่ว่างและต้องตรวจ — พื้นแดง (แก้ที่ต้นทาง) */
+td.rored { background: #ffe3e3; color: #b00d1c; font-weight: 700; }
 /* select ในช่องแก้ไข (ทันตกรรม) */
 td.editcell .select { width: 100%; padding: 6px 26px 6px 8px; font-size: 13px; border-radius: 8px; }
 td.editcell.blank .select { border: 2px solid #e11d2e; background: #ffeceb; color: #b00d1c; font-weight: 700; }
@@ -310,6 +337,11 @@ td.editcell.blank .cin:focus {
 td.editcell.saving .cin { border-color: var(--violet-400); background: var(--violet-50); }
 td.editcell.saved .cin { border-color: var(--mint); background: var(--mint-bg); box-shadow: 0 0 0 3px rgba(127,211,176,.25); }
 td.editcell.err .cin { border-color: var(--rose); background: #fdeef1; box-shadow: 0 0 0 3px rgba(239,155,176,.28); }
+
+/* REHAB code (43) ที่ซ้ำภายใน VN เดียวกัน — เน้นสีเหลืองอำพัน */
+td.pcdup { background: #fff4d6 !important; box-shadow: inset 0 0 0 2px #f59e0b; position: relative; }
+td.pcdup::after { content: "⧉ ซ้ำ"; position: absolute; top: 1px; right: 3px; font-size: 9px; font-weight: 700; color: #b45309; pointer-events: none; }
+td.pcdup .cin { border-color: #f59e0b; background: #fffaf0; color: #92500e; font-weight: 700; }
 
 /* ============ แถบความคืบหน้า ============ */
 .bar { height: 8px; background: var(--violet-100); border-radius: 99px; overflow: hidden; }

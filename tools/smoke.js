@@ -39,7 +39,7 @@ async function call(name, payload, tokenOverride) {
   boot = await getBoot('/');
   key = boot.k;
   console.log('  routes:', Object.keys(boot.r).length, '| setup mode:', boot.setup);
-  Object.keys(boot.r).length === 29 ? ok('แผนที่เส้นทางครบ 29 endpoint') : bad('เส้นทางไม่ครบ');
+  Object.keys(boot.r).length === 31 ? ok('แผนที่เส้นทางครบ 31 endpoint') : bad('เส้นทางไม่ครบ');
   /^[0-9a-f]{24}$/.test(boot.r['auth.login']) ? ok('เส้นทาง API ถูกเข้ารหัส เช่น /q/' + boot.r['auth.login']) : bad('เส้นทางไม่ถูกเข้ารหัส');
 
   console.log('\n=== 2. ป้องกันการยิงตรงแบบ Postman ===');

@@ -19,6 +19,10 @@ const db = require('./lib/db');
 const auth = require('./lib/auth');
 const opd = require('./lib/opd');
 const dental = require('./lib/dental');
+const physio = require('./lib/physio');
+const anc = require('./lib/anc');
+const ipd = require('./lib/ipd');
+const emr = require('./lib/emr');
 const audit = require('./lib/audit');
 const bms = require('./lib/bms');
 
@@ -35,6 +39,11 @@ const ENDPOINTS = [
   'data.checklist', 'save.field',
   'data.diags', 'diag.add', 'diag.update', 'diag.doctor', 'diag.delete',
   'data.dentalcheck', 'data.dentallookups', 'save.dentalfield', 'save.dentalfill',
+  'data.emr', 'data.emrvisits',
+  'data.physiocheck', 'save.physiofield', 'save.physiomerge', 'save.physiofinish',
+  'data.anccheck', 'save.ancfield',
+  'data.ipdcheck', 'data.ipddetail', 'save.ipdfield', 'data.icd9',
+  'ipd.diagadd', 'ipd.diagupdate', 'ipd.diagdelete', 'ipd.procadd', 'ipd.procupdate', 'ipd.procdelete',
   'save.visit'
 ];
 const ROUTE_MAP = {};      // ชื่อ -> รหัส
@@ -107,6 +116,7 @@ function renderPage(file, res) {
 app.get('/', (req, res) => renderPage('login.html', res));
 app.get('/login', (req, res) => renderPage('login.html', res));
 app.get('/app', (req, res) => renderPage('index.html', res));
+app.get('/emr.html', (req, res) => renderPage('emr.html', res));
 
 app.use('/css', express.static(path.join(PUBLIC_DIR, 'css')));
 app.use('/js', express.static(path.join(PUBLIC_DIR, 'js')));
@@ -411,6 +421,167 @@ async function handle(name, p, session, req, res) {
       return { deleted: !!r.affected, diags: await opd.diagsFull(cfg, vn) };
     }
 
+    /* ---- งานกายภาพบำบัด (ovst_rehab / ovst_rehab_detail) ---- */
+    case 'data.physiocheck': {
+      const cfg = await contextFor(session);
+      const from = dateOr(p.from), to = dateOr(p.to || p.from);
+      const dep = p.dep ? String(p.dep) : '';
+      const all = await physio.physioList(cfg, from, to, dep, 20000);
+      const summary = physio.summarizePhysio(all);
+      let rows = all;
+      if (p.status === 'incomplete') rows = rows.filter((r) => !r._complete);
+      else if (p.status === 'complete') rows = rows.filter((r) => r._complete);
+      const q = String(p.q || '').trim().toLowerCase();
+      if (q) {
+        rows = rows.filter((r) =>
+          String(r.hn || '').toLowerCase().includes(q) ||
+          String(r.vn || '').toLowerCase().includes(q) ||
+          String(r.ptname || '').toLowerCase().includes(q) ||
+          String(r.cid || '').includes(q));
+      }
+      return { from, to, dep, fields: physio.META, summary, grandTotal: all.length, total: rows.length, rows: rows.slice(0, 3000) };
+    }
+
+    case 'save.physiomerge': {
+      const cfg = await contextFor(session);
+      const r = await physio.mergeDupRehab(cfg, Array.isArray(p.vns) ? p.vns : [], Array.isArray(p.pairs) ? p.pairs : []);
+      audit.write({
+        vn: '(' + r.vnCount + ' vn)', hn: '', vstdate: '', main_dep: '', dep_name: '', patient: '',
+        user: session.u, userName: session.n, fields: ['physio-merge: รวม ' + r.groups + ' กลุ่ม ลบ ' + r.merged + ' แถว']
+      });
+      return r;
+    }
+
+    case 'save.physiofinish': {
+      const cfg = await contextFor(session);
+      const r = await physio.fillFinishDates(cfg, Array.isArray(p.regs) ? p.regs : []);
+      audit.write({
+        vn: '(' + r.requested + ' ทะเบียน)', hn: '', vstdate: '', main_dep: '', dep_name: '', patient: '',
+        user: session.u, userName: session.n, fields: ['physio-finish: ตั้งวันที่สิ้นสุด = วันที่เริ่ม ' + r.updated + ' ทะเบียน']
+      });
+      return r;
+    }
+
+    case 'save.physiofield': {
+      const cfg = await contextFor(session);
+      const ctx = { src: String(p.src || 'D'), pid: p.pid, items_id: p.items, register_id: p.reg, hn: p.hn };
+      const r = await physio.savePhysioField(cfg, String(p.field || ''), ctx, p.value);
+      const row = await physio.getPhysioRow(cfg, String(p.src || 'D'), p.pid);
+      audit.write({
+        vn: row ? row.vn : '', hn: row ? row.hn : '', vstdate: row ? row.vstdate : '',
+        main_dep: '', dep_name: '', patient: row ? row.ptname : '',
+        user: session.u, userName: session.n, fields: ['physio:' + String(p.field || '')]
+      });
+      return { saved: true, value: r.value, row };
+    }
+
+    /* ---- งานฝากครรภ์ (person_anc / person_anc_service / person_anc_preg_care) ---- */
+    case 'data.anccheck': {
+      const cfg = await contextFor(session);
+      const mode = anc.MODES[p.mode] ? String(p.mode) : 'prenatal';
+      const from = dateOr(p.from), to = dateOr(p.to || p.from);
+      const all = await anc.ancList(cfg, mode, from, to, 20000);
+      const summary = anc.summarizeAnc(mode, all);
+      let rows = all;
+      if (p.status === 'incomplete') rows = rows.filter((r) => !r._complete);
+      else if (p.status === 'complete') rows = rows.filter((r) => r._complete);
+      const q = String(p.q || '').trim().toLowerCase();
+      if (q) {
+        rows = rows.filter((r) =>
+          String(r.hn || '').toLowerCase().includes(q) ||
+          String(r.vn || '').toLowerCase().includes(q) ||
+          String(r.ptname || '').toLowerCase().includes(q) ||
+          String(r.cid || '').includes(q));
+      }
+      return { mode, from, to, fields: anc.metaOf(mode), summary, grandTotal: all.length, total: rows.length, rows: rows.slice(0, 3000) };
+    }
+
+    case 'save.ancfield': {
+      const cfg = await contextFor(session);
+      const mode = anc.MODES[p.mode] ? String(p.mode) : 'prenatal';
+      const ctx = p.ctx && typeof p.ctx === 'object' ? p.ctx : {};
+      const r = await anc.saveAncField(cfg, mode, String(p.field || ''), ctx, p.value);
+      audit.write({
+        vn: String(ctx.vn || ''), hn: String(ctx.hn || ''), vstdate: '',
+        main_dep: '', dep_name: '', patient: '',
+        user: session.u, userName: session.n, fields: ['anc(' + mode + '):' + String(p.field || '')]
+      });
+      return { saved: true, value: r.value };
+    }
+
+    /* ---- ผู้ป่วยใน (ipt / iptdiag / iptoprt / opitemrece) ---- */
+    case 'data.ipdcheck': {
+      const cfg = await contextFor(session);
+      const basis = ipd.BASIS[p.basis] ? String(p.basis) : 'stay';
+      const from = dateOr(p.from), to = dateOr(p.to || p.from);
+      const ward = String(p.ward || '');
+      const [wards, all] = await Promise.all([
+        ipd.wards(cfg, basis, from, to),
+        ipd.ipdList(cfg, basis, from, to, ward, 20000)
+      ]);
+      const summary = ipd.summarize(all);
+      let rows = all;
+      if (p.status === 'incomplete') rows = rows.filter((r) => !r._complete);
+      else if (p.status === 'complete') rows = rows.filter((r) => r._complete);
+      if (p.miss === 'advice') rows = rows.filter((r) => r.advice_n > 0);
+      else if (p.miss) rows = rows.filter((r) => r._missing.includes(String(p.miss)));
+      const q = String(p.q || '').trim().toLowerCase();
+      if (q) {
+        rows = rows.filter((r) =>
+          String(r.an || '').toLowerCase().includes(q) ||
+          String(r.hn || '').toLowerCase().includes(q) ||
+          String(r.ptname || '').toLowerCase().includes(q) ||
+          String(r.cid || '').includes(q));
+      }
+      return { basis, from, to, ward, wards, fields: ipd.META, summary, grandTotal: all.length, total: rows.length, rows: rows.slice(0, 3000) };
+    }
+
+    case 'data.ipddetail': {
+      const cfg = await contextFor(session);
+      return { items: await ipd.detail(cfg, String(p.an || ''), String(p.kind || '')) };
+    }
+
+    case 'data.icd9': {
+      const cfg = await contextFor(session);
+      return { items: await ipd.searchIcd9(cfg, p.q) };
+    }
+
+    case 'save.ipdfield': {
+      const cfg = await contextFor(session);
+      const ctx = p.ctx && typeof p.ctx === 'object' ? p.ctx : {};
+      const r = await ipd.saveField(cfg, String(p.field || ''), ctx, p.value);
+      audit.write({ vn: String(ctx.an || ''), hn: String(ctx.hn || ''), vstdate: '', main_dep: '', dep_name: '', patient: '',
+        user: session.u, userName: session.n, fields: ['ipd:' + String(p.field || '')] });
+      return { saved: true, value: r.value, row: await ipd.getRow(cfg, String(ctx.an || '')) };
+    }
+
+    case 'ipd.diagadd': case 'ipd.diagupdate': case 'ipd.diagdelete':
+    case 'ipd.procadd': case 'ipd.procupdate': case 'ipd.procdelete': {
+      const cfg = await contextFor(session);
+      const an = String(p.an || '');
+      const kind = name.indexOf('diag') >= 0 ? 'dx' : 'proc';
+      if (name === 'ipd.diagadd') await ipd.addDiag(cfg, an, p.icd10, p.diagtype, p.doctor, session.u);
+      else if (name === 'ipd.diagupdate') await ipd.updateDiag(cfg, an, p.id, p.data || {});
+      else if (name === 'ipd.diagdelete') await ipd.deleteDiag(cfg, an, p.id);
+      else if (name === 'ipd.procadd') await ipd.addProc(cfg, an, p.data || {}, session.u);
+      else if (name === 'ipd.procupdate') await ipd.updateProc(cfg, an, p.id, p.data || {});
+      else await ipd.deleteProc(cfg, an, p.id);
+      audit.write({ vn: an, hn: '', vstdate: '', main_dep: '', dep_name: '', patient: '',
+        user: session.u, userName: session.n, fields: [name] });
+      return { items: await ipd.detail(cfg, an, kind), row: await ipd.getRow(cfg, an) };
+    }
+
+    /* ---- Patient EMR (อ่านอย่างเดียว) ---- */
+    case 'data.emr': {
+      const cfg = await contextFor(session);
+      return await emr.buildEmr(cfg, String(p.vn || ''));
+    }
+
+    case 'data.emrvisits': {
+      const cfg = await contextFor(session);
+      return { success: true, items: await emr.visitsOf(cfg, String(p.hn || '')) };
+    }
+
     /* ---- ตรวจข้อมูลทันตกรรม (dental_care) ---- */
     case 'data.dentalcheck': {
       const cfg = await contextFor(session);
@@ -463,6 +634,7 @@ async function handle(name, p, session, req, res) {
     case 'save.field': {
       const cfg = await contextFor(session);
       const r = await opd.saveCheckField(cfg, String(p.field || ''), p.vn, p.value);
+      await opd.stampAppStaff(cfg, String(p.vn || ''), session.u);   // ประทับผู้บันทึกเพิ่มเติม
       const row = await opd.getCheckRow(cfg, String(p.vn || ''));
       audit.write({
         vn: String(p.vn || ''), hn: row ? row.hn : '', vstdate: row ? row.vstdate : '',
@@ -530,6 +702,7 @@ async function handle(name, p, session, req, res) {
       }
 
       if (changed.length) {
+        await opd.stampAppStaff(cfg, vn, session.u);   // ประทับผู้บันทึกเพิ่มเติม เมื่อมีการบันทึกจริง
         audit.write({
           vn, hn: visit.hn, vstdate: visit.vstdate, main_dep: String(visit.main_dep || ''),
           dep_name: visit.dep_name, patient: visit.full_name,
