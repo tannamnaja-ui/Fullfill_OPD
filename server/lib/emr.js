@@ -78,12 +78,14 @@ async function screenOf(cfg, vn) {
   catch (e) { try { const r = await one(cfg, mini, [vn]); return r || {}; } catch (e2) { return {}; } }
 }
 
-/** การวินิจฉัย ICD-10 */
+/** การวินิจฉัย ICD-10 (รหัสที่เป็นตัวเลขล้วน = หัตถการ ICD-9-CM → ใช้ชื่อจาก icd9cm1) */
 async function icd10Of(cfg, vn) {
   return many(cfg,
-    "SELECT d.icd10, COALESCE(i.name,'') AS icd10_name, COALESCE(dc.name,'') AS doctor_name, d.diagtype" +
+    "SELECT d.icd10, COALESCE(i.name, p.name, '') AS icd10_name, COALESCE(dc.name,'') AS doctor_name, d.diagtype" +
     ' FROM ovstdiag d' +
     ' LEFT JOIN icd101 i ON i.code = d.icd10' +
+    // icd9cm1 เก็บเฉพาะรหัสตัวเลข — รหัสที่มีตัวอักษร (ICD-10) จึงไม่ match ตารางนี้
+    ' LEFT JOIN icd9cm1 p ON i.code IS NULL AND p.code = d.icd10' +
     ' LEFT JOIN doctor dc ON dc.code = d.doctor' +
     ' WHERE d.vn = ? ORDER BY d.diagtype, d.icd10', [vn]);
 }

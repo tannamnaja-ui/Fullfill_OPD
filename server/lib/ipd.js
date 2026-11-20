@@ -45,7 +45,7 @@ const FIELDS = [
   { key: 'admtype', label: 'ประเภท Admit (TYPEIN)', file: 'ADMISSION', type: INT, w: 120, name: 'admtype_name',
     req: ALWAYS, bad: (r) => blank(r.admtype) || n(r.admtype) === 0,
     save: { table: 'ipt', col: 'ipt_admit_type_id', keyCol: 'an', ctxKey: 'an' }, ref: { table: 'ipt_admit_type', col: 'ipt_admit_type_id' } },
-  { key: 'bw', label: 'น้ำหนักแรกรับ (กก.)', file: 'ADMISSION', type: FLOAT, w: 104,
+  { key: 'bw', label: 'น้ำหนักแรกรับ (กรัม)', file: 'ADMISSION', type: FLOAT, w: 104,
     req: ALWAYS, bad: (r) => n(r.bw) <= 0, hint: 'ยังไม่ได้ลงน้ำหนักแรกรับ',
     save: { table: 'ipt', col: 'bw', keyCol: 'an', ctxKey: 'an' } },
   { key: 'dchstts', label: 'สถานะจำหน่าย (DISCHSTATUS)', file: 'ADMISSION', type: TXT, w: 120, name: 'dchstts_name',

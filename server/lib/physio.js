@@ -28,10 +28,24 @@ const META = FIELDS.map((f) => ({ key: f.key, label: f.label, type: f.type, w: f
 
 const isBlank = (v) => v === null || v === undefined || String(v).trim() === '';
 
+/** ช่องคัดกรอง (opdscreen) — ตรวจเฉพาะเคส OPD (มี vn) ว่าง/0 = สีแดง, บันทึกผ่าน save.field แบบหน้า OPD */
+const OPD_CHECK = [
+  { key: 'cc', label: 'อาการสำคัญ (CC)' }, { key: 'bps', label: 'SBP' }, { key: 'bpd', label: 'DBP' },
+  { key: 'temperature', label: 'อุณหภูมิ' }, { key: 'bw', label: 'นน.' }, { key: 'height', label: 'ส่วนสูง' }, { key: 'bmi', label: 'BMI' }
+];
+const OPD_NUM = new Set(['bps', 'bpd', 'temperature', 'bw', 'height', 'bmi']);
+const isOpdBlank = (k, v) => isBlank(v) || (OPD_NUM.has(k) && Number(v) === 0);
+const isOpdRow = (row) => !isBlank(row.vn);
+
 function evalPhysio(row) {
   const missing = CHECK_KEYS.filter((k) => isBlank(row[k]));
-  const score = CHECK_KEYS.length - missing.length;
-  return { missing, score, total: CHECK_KEYS.length, percent: Math.round((score / CHECK_KEYS.length) * 100), complete: missing.length === 0 };
+  let total = CHECK_KEYS.length;
+  if (isOpdRow(row)) {
+    total += OPD_CHECK.length;
+    OPD_CHECK.forEach((f) => { if (isOpdBlank(f.key, row[f.key])) missing.push(f.key); });
+  }
+  const score = total - missing.length;
+  return { missing, score, total, percent: Math.round((score / total) * 100), complete: missing.length === 0 };
 }
 
 function toISO(v) {
@@ -94,7 +108,7 @@ function decorate(r) {
     date_start: toISO(r.date_start), date_finish: toISO(r.date_finish)
   });
   const ev = evalPhysio(out);
-  out._missing = ev.missing; out._score = ev.score; out._percent = ev.percent; out._complete = ev.complete;
+  out._missing = ev.missing; out._score = ev.score; out._total = ev.total; out._percent = ev.percent; out._complete = ev.complete;
   return out;
 }
 
@@ -118,17 +132,20 @@ async function getPhysioRow(cfg, src, pid) {
 function summarizePhysio(rows) {
   const miss = {};
   CHECK_KEYS.forEach((k) => { miss[k] = 0; });
-  let complete = 0, scoreSum = 0, ipd = 0;
+  OPD_CHECK.forEach((f) => { miss[f.key] = 0; });
+  let complete = 0, scoreSum = 0, totalSum = 0, ipd = 0;
   for (const r of rows) {
     if (r._complete) complete++;
     if (r.src === 'I') ipd++;
-    scoreSum += r._score;
+    scoreSum += r._score; totalSum += r._total;
     for (const m of r._missing) miss[m]++;
   }
   return {
     total: rows.length, complete, incomplete: rows.length - complete, ipd, opd: rows.length - ipd,
-    percent: rows.length ? Math.round((scoreSum / (rows.length * CHECK_KEYS.length)) * 100) : 0,
-    fields: FIELDS.filter((f) => f.check).map((f) => ({ key: f.key, label: f.label, missing: miss[f.key] })).sort((a, b) => b.missing - a.missing)
+    percent: totalSum ? Math.round((scoreSum / totalSum) * 100) : 0,
+    fields: FIELDS.filter((f) => f.check).map((f) => ({ key: f.key, label: f.label, missing: miss[f.key] }))
+      .concat(OPD_CHECK.map((f) => ({ key: f.key, label: f.label + ' (OPD)', missing: miss[f.key] })))
+      .sort((a, b) => b.missing - a.missing)
   };
 }
 

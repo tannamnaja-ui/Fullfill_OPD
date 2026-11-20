@@ -90,6 +90,8 @@
     });
     $('#btnApply').addEventListener('click', refresh);
     $('#btnReload').addEventListener('click', function () { loadDepartments(); refresh(); });
+    $('#btnCompact').addEventListener('click', function () { setCompact(!document.body.classList.contains('compact')); });
+    try { if (localStorage.getItem('fullfill.compact') === '1') setCompact(true); } catch (e) { }
     $('#btnLogout').addEventListener('click', logout);
     $('#btnBurger').addEventListener('click', function () { $('#side').classList.toggle('open'); });
 
@@ -343,7 +345,10 @@
 
     html += '<div class="cols">';
 
-    /* --- ความสมบูรณ์รายจุดบริการ --- */
+    /* --- ความสมบูรณ์รายจุดบริการ (สมบูรณ์มากที่สุดขึ้นก่อน; เท่ากันเรียงตามจำนวนผู้รับบริการ) --- */
+    s.deps = (s.deps || []).slice().sort(function (a, b) {
+      return (b.percent - a.percent) || (b.total - a.total) || String(a.dep_name).localeCompare(String(b.dep_name), 'th');
+    });
     html += '<div class="card">' +
       '<div class="card-head"><div class="card-title">🏥 ความสมบูรณ์รายจุดบริการ</div>' +
       '<span class="badge badge-violet">' + s.deps.length + ' จุดบริการ</span></div><div class="card-pad">';
@@ -436,6 +441,24 @@
       '<div class="lb">' + esc(label) + '</div>' +
       '<div class="vl">' + val + '</div>' +
       '<div class="ft">' + esc(foot) + '</div></div>';
+  }
+
+  /** หัวตาราง 2 แถว: ให้แถวที่สองค้างอยู่ใต้แถวแรกตอนเลื่อนลง (ไม่ซ้อนทับกัน) */
+  function stickyTwoRowHead(tbl) {
+    if (!tbl || !tbl.tHead || tbl.tHead.rows.length < 2) return;
+    var r1 = tbl.tHead.rows[0], h = r1.getBoundingClientRect().height;
+    Array.prototype.forEach.call(r1.cells, function (c) { c.style.top = '0px'; c.style.zIndex = 3; });
+    Array.prototype.forEach.call(tbl.tHead.rows[1].cells, function (c) { c.style.top = h + 'px'; c.style.zIndex = 3; });
+  }
+
+  /* ---------- ปุ่ม ▲ ซ่อน: ซ่อนตัวกรอง + การ์ดสรุป เพื่อเพิ่มพื้นที่ลงข้อมูล ---------- */
+  function setCompact(on) {
+    document.body.classList.toggle('compact', on);
+    var b = $('#btnCompact');
+    if (b) b.textContent = on ? '▼ แสดงตัวกรอง' : '▲ ซ่อน';
+    try { localStorage.setItem('fullfill.compact', on ? '1' : ''); } catch (e) { }
+    var t = $('#pageIpd table.grid');
+    if (t) stickyTwoRowHead(t);
   }
 
   function pct(a, b) { return b ? Math.round((a / b) * 100) : 0; }
@@ -1458,6 +1481,7 @@
     }
     html += '</div>';
     root.innerHTML = html;
+    stickyTwoRowHead($('#pageIpd table.grid'));
 
     $$('#pageIpd .ibasis').forEach(function (b) {
       b.addEventListener('click', function () { state.ipdBasis = b.dataset.basis; state.ipdMiss = ''; refresh(); });
@@ -2017,7 +2041,7 @@
         var hasVn = cellVal(r.vn).trim() !== '';
         html += '<tr data-key="' + esc(r.key) + '">';
         html += '<td class="t-center nowrap"><span class="pcbadge ' + UI.tone(r._percent) + '">' + r._percent + '%</span>' +
-          (r.src === 'I' ? '<div class="tiny" style="color:#b45309">IPD</div>' : '') + '</td>';
+          (hasVn ? '<div class="tiny bold" style="color:#1d4ed8">OPD</div>' : '<div class="tiny bold" style="color:#b45309">IPD</div>') + '</td>';
         var dataAttrs = ' data-key="' + esc(r.key) + '" data-src="' + esc(r.src) + '" data-pid="' + esc(r.pid) + '"' +
           ' data-items="' + esc(cellVal(r.items_id)) + '" data-reg="' + esc(cellVal(r.register_id)) + '" data-hn="' + esc(cellVal(r.hn)) + '"';
         viewCols.forEach(function (c) {
@@ -2062,9 +2086,9 @@
             return;
           }
           var ob = physioOpdBlank(c, r);
-          var t2 = (c.type === 'int' || c.type === 'float') ? 'number' : 'text';
-          html += '<td class="editcell' + (ob ? ' blank' : '') + '" style="min-width:' + c.w + 'px">' +
-            '<input class="cin popd" type="' + t2 + '" data-vn="' + esc(r.vn) + '" data-field="' + c.key + '" data-type="' + c.type + '"' +
+          var numIn = (c.type === 'int' || c.type === 'float') ? ' inputmode="decimal"' : '';
+          html += '<td class="editcell' + (ob ? ' blank' : '') + '" style="min-width:' + c.w + 'px"' + (ob ? ' title="เคส OPD — ยังไม่ได้ลง"' : '') + '>' +
+            '<input class="cin popd" type="text"' + numIn + ' data-vn="' + esc(r.vn) + '" data-field="' + c.key + '" data-type="' + c.type + '"' +
             (c.key === 'pdx' ? ' list="icdOptionsP" autocomplete="off"' : '') +
             ' value="' + esc(cellVal(r[c.key])) + '"></td>';
         });
@@ -2306,7 +2330,7 @@
       td.classList.remove('blank', 'err'); td.classList.add('saved');
       setTimeout(function () { td.classList.remove('saved'); }, 1200);
       // อัปเดตช่องเดียวกันของ vn เดียวกันในแถวอื่น (physic_list หลายรายการต่อ vn)
-      if (r.visit) syncPhysioVn(inp.dataset.vn, inp.dataset.field, inp.value);
+      syncPhysioVn(inp.dataset.vn, inp.dataset.field, inp.value);
     } catch (e) {
       if (guardExpiry(e)) return;
       td.classList.add('err');
