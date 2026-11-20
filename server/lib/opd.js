@@ -175,12 +175,16 @@ async function lookup(cfg, name) {
   } catch (e) { return []; }
 }
 
-/** ค้นหาแพทย์ (position_id=1, active='Y') ด้วยชื่อ/นามสกุล/licenseno แบบเรียลไทม์ */
+/** คำนำหน้าชื่อที่นับเป็นแพทย์/ทันตแพทย์ (ชื่อขึ้นต้นด้วยคำเหล่านี้) */
+const DOCTOR_PREFIX = ['นพ', 'พญ', 'ทพ', 'น.พ', 'พ.ญ', 'ท.', 'ทพญ', 'ก.'];
+
+/** ค้นหาแพทย์ (active='Y' + ชื่อขึ้นต้นด้วยคำนำหน้าแพทย์) ด้วยชื่อ/นามสกุล/licenseno แบบเรียลไทม์ */
 async function searchDoctors(cfg, term, limit) {
   const t = String(term || '').trim();
   const lim = Math.min(parseInt(limit, 10) || 30, 100);
-  let sql = "SELECT code, name, licenseno FROM doctor WHERE position_id = 1 AND active = 'Y'";
-  const params = [];
+  const params = DOCTOR_PREFIX.map((p) => p + '%');
+  let sql = "SELECT code, name, licenseno FROM doctor WHERE active = 'Y' AND (" +
+    DOCTOR_PREFIX.map(() => 'name LIKE ?').join(' OR ') + ')';
   if (t) {
     sql += ' AND (name LIKE ? OR licenseno LIKE ? OR code LIKE ?)';
     const q = '%' + t + '%';

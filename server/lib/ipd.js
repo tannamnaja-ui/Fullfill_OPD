@@ -3,8 +3,8 @@
  * ตรวจสอบ/เพิ่มข้อมูลผู้ป่วยใน ตามแฟ้ม 43 แฟ้ม + เงื่อนไขกองทุน
  *   ADMISSION / DIAGNOSIS_IPD / DRUG_IPD / PROCEDURE_IPD / CHARGE_IPD
  * มุมมอง (basis):
- *   stay : ยังไม่จำหน่าย (นอนอยู่ใน ward) — ไม่ใช้ช่วงวันที่
- *   dch  : จำหน่ายในช่วงวันที่ (ipt.dchdate)
+ *   stay : ยังไม่จำหน่าย (นอนอยู่ใน ward) = confirm_discharge = 'N' AND dchdate IS NULL — ไม่ใช้ช่วงวันที่
+ *   dch  : จำหน่ายในช่วงวันที่ (ipt.dchdate) + confirm_discharge = 'Y'
  *   adm  : Admit ในช่วงวันที่ (ipt.regdate)
  * SQL เขียนให้ใช้ได้ทั้ง PostgreSQL และ MySQL (โหมด BMS session) — ไม่ใช้ DISTINCT ON / ::date ตรง ๆ
  */
@@ -144,9 +144,9 @@ const SELECT = [
 /** เงื่อนไข WHERE ตามมุมมอง + ward */
 function whereOf(basis, from, to, ward) {
   const where = [], params = [];
-  if (basis === 'dch') { where.push('i.dchdate BETWEEN {{D}} AND {{D}}'); params.push(from, to); }
+  if (basis === 'dch') { where.push("i.confirm_discharge = 'Y' AND i.dchdate BETWEEN {{D}} AND {{D}}"); params.push(from, to); }
   else if (basis === 'adm') { where.push('i.regdate BETWEEN {{D}} AND {{D}}'); params.push(from, to); }
-  else where.push('i.dchdate IS NULL');
+  else where.push("i.confirm_discharge = 'N' AND i.dchdate IS NULL");   // นอนอยู่ = confirm_discharge = 'N' (และยังไม่มีวันจำหน่าย)
   if (ward === '__none__') where.push("(i.ward IS NULL OR TRIM(i.ward) = '')");
   else if (ward) { where.push('i.ward = ?'); params.push(ward); }
   return { sql: where.join(' AND '), params };
@@ -269,17 +269,20 @@ const DETAIL_SQL = {
 /** vital sign ทุกครั้งของ AN (บันทึกพยาบาล + ตาราง ipt_vital_sign ที่เก็บแยกรายค่า) เรียงตามเวลา */
 async function vitalSigns(cfg, an) {
   const nurse = await db.query(cfg, [
-    'SELECT nn.note_date, nn.note_time, nn.temperature, nn.pulse, nn.respiratory_rate, nn.bp_systolic, nn.bp_diastolic, nn.spo2_ra, nn.staff',
-    'FROM ipd_nurse_note nn WHERE nn.an = ? AND ' + VS_HAS
+    'SELECT nn.note_date, nn.note_time, nn.temperature, nn.pulse, nn.respiratory_rate, nn.bp_systolic, nn.bp_diastolic, nn.spo2_ra,',
+    "  COALESCE(NULLIF(u.name,''), nn.staff) AS staff",
+    'FROM ipd_nurse_note nn LEFT JOIN opduser u ON u.loginname = nn.staff',
+    'WHERE nn.an = ? AND ' + VS_HAS
   ].join('\n'), [String(an)]);
   const graphic = await db.query(cfg, [
-    'SELECT v.vital_sign_datetime AS dt, MAX(v.staff) AS staff,',
+    "SELECT v.vital_sign_datetime AS dt, MAX(COALESCE(NULLIF(u.name,''), v.staff)) AS staff,",
     '  MAX(CASE WHEN v.vital_sign_id = 1 THEN v.vital_sign_value END) AS temperature,',
     '  MAX(CASE WHEN v.vital_sign_id = 2 THEN v.vital_sign_value END) AS pulse,',
     '  MAX(CASE WHEN v.vital_sign_id = 3 THEN v.vital_sign_value END) AS respiratory_rate,',
     '  MAX(CASE WHEN v.vital_sign_id = 4 THEN v.vital_sign_value END) AS bp_systolic,',
     '  MAX(CASE WHEN v.vital_sign_id = 5 THEN v.vital_sign_value END) AS bp_diastolic',
-    'FROM ipt_vital_sign v WHERE v.an = ? GROUP BY v.vital_sign_datetime'
+    'FROM ipt_vital_sign v LEFT JOIN opduser u ON u.loginname = v.staff',
+    'WHERE v.an = ? GROUP BY v.vital_sign_datetime'
   ].join('\n'), [String(an)]);
   const pick = (r) => ({ temperature: r.temperature, pulse: r.pulse, rr: r.respiratory_rate, sbp: r.bp_systolic, dbp: r.bp_diastolic, staff: r.staff });
   const out = nurse.map((r) => Object.assign({ date: toISO(r.note_date), time: s(r.note_time).slice(0, 5), spo2: r.spo2_ra, src: 'บันทึกพยาบาล' }, pick(r)))
