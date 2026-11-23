@@ -392,7 +392,7 @@ async function handle(name, p, session, req, res) {
     case 'diag.add': {
       const cfg = await contextFor(session);
       const vn = String(p.vn || '');
-      const r = await opd.addDiagVn(cfg, vn, p.icd10, p.diagtype || '1', p.doctor);
+      const r = await opd.addDiagVn(cfg, vn, p.icd10, p.diagtype || '1', p.doctor, session.u);
       audit.write({ vn, hn: '', vstdate: '', main_dep: '', dep_name: '', patient: '',
         user: session.u, userName: session.n, fields: ['diag+:' + String(p.icd10 || '').toUpperCase()] });
       return { added: !!r.affected, duplicated: !!r.duplicated, diags: await opd.diagsFull(cfg, vn) };
@@ -696,7 +696,7 @@ async function handle(name, p, session, req, res) {
       }
 
       if (data.icd10 && String(data.icd10).trim()) {
-        const r = await opd.addDiag(cfg, visit, data.icd10, data.diagtype || '1', data.doctor || visit.doctor);
+        const r = await opd.addDiag(cfg, visit, data.icd10, data.diagtype || '1', data.doctor || visit.doctor, session.u);
         if (r.affected) changed.push('icd10:' + String(data.icd10).toUpperCase());
         else if (r.duplicated) changed.push('icd10-ซ้ำ');
       }

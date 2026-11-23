@@ -260,11 +260,8 @@ async function getVisitDoctor(cfg, vn) {
 }
 
 /** เพิ่มวินิจฉัยด้วย vn (ดึง hn/vstdate จาก ovst ให้เอง) */
-async function addDiagVn(cfg, vn, icd10, diagtype, doctorCode) {
-  const ov = await db.query(cfg, 'SELECT hn, vstdate FROM ovst WHERE vn = ? LIMIT 1', [vn]);
-  if (!ov.length) { const e = new Error('ไม่พบ visit นี้'); e.status = 404; throw e; }
-  const visit = { vn: String(vn), hn: ov[0].hn, vstdate: db.ymd(ov[0].vstdate) };
-  return addDiag(cfg, visit, icd10, diagtype, doctorCode);
+async function addDiagVn(cfg, vn, icd10, diagtype, doctorCode, staff) {
+  return addDiag(cfg, { vn: String(vn) }, icd10, diagtype, doctorCode, staff);
 }
 
 /** เปลี่ยนประเภทการวินิจฉัย (เจาะจงเรคคอร์ดด้วย diagtype เดิม) */
@@ -334,15 +331,48 @@ async function saveVisitFields(cfg, vn, data) {
 }
 
 /** เพิ่มการวินิจฉัยลง ovstdiag */
-async function addDiag(cfg, visit, icd10, diagtype, doctorCode) {
+/** id ถัดไปจากตาราง serial ของ HOSxP (get_serialnumber) — ถ้าไม่มีฟังก์ชันใช้ MAX+1 */
+async function nextSerial(cfg, name, table, col) {
+  try {
+    const r = await db.query(cfg, 'SELECT get_serialnumber(?) AS id', [name]);
+    if (r.length && Number(r[0].id) > 0) return Number(r[0].id);
+  } catch (e) { /* ไม่มีฟังก์ชัน */ }
+  const r = await db.query(cfg, 'SELECT COALESCE(MAX(' + col + '), 0) + 1 AS id FROM ' + table, []);
+  return Number(r[0].id);
+}
+
+/**
+ * เพิ่มการวินิจฉัย OPD (ovstdiag) — ลงคอลัมน์ให้ครบแบบที่ HOSxP บันทึก
+ *   ovst_diag_id (serial), vn, hn, vstdate, vsttime (จาก ovst), icd10, diagtype, doctor,
+ *   staff (ผู้ใช้ที่บันทึก), diag_no (ลำดับใน vn), update_datetime
+ */
+async function addDiag(cfg, visit, icd10, diagtype, doctorCode, staff) {
   const code = String(icd10 || '').trim().toUpperCase();
   if (!code) throw new Error('ไม่ได้ระบุรหัส ICD-10');
-  const dup = await db.query(cfg, 'SELECT vn FROM ovstdiag WHERE vn = ? AND icd10 = ? LIMIT 1', [visit.vn, code]);
+  const vn = String(visit.vn);
+  const dup = await db.query(cfg, 'SELECT vn FROM ovstdiag WHERE vn = ? AND icd10 = ? LIMIT 1', [vn, code]);
   if (dup.length) return { affected: 0, duplicated: true };
-  const cols = ['vn', 'hn', 'vstdate', 'icd10', 'diagtype'];
-  const vals = [visit.vn, visit.hn, visit.vstdate, code, String(diagtype || '1')];
+
+  // hn / วันที่ / เวลา ของ visit จาก ovst
+  const ov = await db.query(cfg, 'SELECT hn, vstdate, vsttime FROM ovst WHERE vn = ? LIMIT 1', [vn]);
+  if (!ov.length) { const e = new Error('ไม่พบ visit นี้'); e.status = 404; throw e; }
+  const hn = ov[0].hn || visit.hn;
+  const vstdate = db.ymd(ov[0].vstdate || visit.vstdate);
+  const vsttime = ov[0].vsttime ? String(ov[0].vsttime).slice(0, 8) : '00:00:00';
+
+  // ลำดับการวินิจฉัยใน vn นี้
+  const cnt = await db.query(cfg, 'SELECT COUNT(*) AS c FROM ovstdiag WHERE vn = ?', [vn]);
+  const diagNo = (Number(cnt[0].c) || 0) + 1;
+
+  // ovst_diag_id ไม่มี default ในฐานข้อมูล → ขอเลขจาก serial ของ HOSxP (ไม่มีฟังก์ชัน → MAX+1)
+  const id = await nextSerial(cfg, 'ovst_diag_id', 'ovstdiag', 'ovst_diag_id');
+
+  const cols = ['ovst_diag_id', 'vn', 'hn', 'vstdate', 'vsttime', 'icd10', 'diagtype', 'diag_no'];
+  const vals = [id, vn, hn, vstdate, vsttime, code, String(diagtype || '1'), diagNo];
   if (doctorCode) { cols.push('doctor'); vals.push(String(doctorCode)); }
-  const sql = 'INSERT INTO ovstdiag (' + cols.join(', ') + ') VALUES (' + cols.map(() => '?').join(', ') + ')';
+  if (staff) { cols.push('staff'); vals.push(String(staff)); }
+  const sql = 'INSERT INTO ovstdiag (' + cols.join(', ') + ', update_datetime) VALUES (' +
+    cols.map(() => '?').join(', ') + ', CURRENT_TIMESTAMP)';
   return db.execute(cfg, sql, vals);
 }
 
