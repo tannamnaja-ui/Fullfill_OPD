@@ -77,7 +77,7 @@ const dateHolder = (cfg) => (cfg.driver === 'postgres' ? '?::date' : '?');
 function decorate(r) {
   const ev = evalDental(r);
   return Object.assign({}, r, {
-    vstdate: String(r.vstdate).slice(0, 10),
+    vstdate: db.ymd(r.vstdate),
     ptname: r.ptname || '',
     _missing: ev.missing, _score: ev.score, _percent: ev.percent, _complete: ev.complete
   });

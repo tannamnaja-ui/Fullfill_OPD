@@ -8,6 +8,20 @@ let pool = null;
 let poolKey = '';
 let poolDriver = '';
 
+/** วันที่ → 'YYYY-MM-DD' (PostgreSQL คืน Date object, MySQL คืน string) — ห้ามใช้ String(date).slice(0,10) */
+function ymd(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (v instanceof Date) {
+    if (isNaN(v)) return '';
+    return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2) + '-' + ('0' + v.getDate()).slice(-2);
+  }
+  const s = String(v);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[0];
+  const d = new Date(s);
+  return isNaN(d) ? s.slice(0, 10) : ymd(d);
+}
+
 const keyOf = (c) => [c.driver, c.host, c.port, c.database, c.username, c.password].join('|');
 
 /** แปลง placeholder ? -> $1,$2 สำหรับ PostgreSQL */
@@ -118,4 +132,4 @@ async function closeAll() {
   if (pool) { try { await pool.end(); } catch (e) {} pool = null; poolKey = ''; }
 }
 
-module.exports = { query, execute, testConnection, closeAll, toPg, get driver() { return poolDriver; } };
+module.exports = { query, execute, testConnection, closeAll, toPg, ymd, get driver() { return poolDriver; } };

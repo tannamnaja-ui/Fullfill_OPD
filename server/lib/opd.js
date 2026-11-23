@@ -94,7 +94,7 @@ const VISIT_SELECT = [
 function decorate(r) {
   const ev = evaluate(r);
   return Object.assign({}, r, {
-    vstdate: String(r.vstdate).slice(0, 10),
+    vstdate: db.ymd(r.vstdate),
     vsttime: String(r.vsttime || '').slice(0, 8),
     full_name: [r.pname, r.fname, r.lname].filter(Boolean).join(' ').trim(),
     _missing: ev.missing, _score: ev.score, _percent: ev.percent, _complete: ev.complete
@@ -263,7 +263,7 @@ async function getVisitDoctor(cfg, vn) {
 async function addDiagVn(cfg, vn, icd10, diagtype, doctorCode) {
   const ov = await db.query(cfg, 'SELECT hn, vstdate FROM ovst WHERE vn = ? LIMIT 1', [vn]);
   if (!ov.length) { const e = new Error('ไม่พบ visit นี้'); e.status = 404; throw e; }
-  const visit = { vn: String(vn), hn: ov[0].hn, vstdate: String(ov[0].vstdate).slice(0, 10) };
+  const visit = { vn: String(vn), hn: ov[0].hn, vstdate: db.ymd(ov[0].vstdate) };
   return addDiag(cfg, visit, icd10, diagtype, doctorCode);
 }
 
@@ -464,7 +464,7 @@ function evalCheck(row) {
 function decorateCheck(r) {
   const ev = evalCheck(r);
   return Object.assign({}, r, {
-    vstdate: String(r.vstdate).slice(0, 10),
+    vstdate: db.ymd(r.vstdate),
     vsttime: String(r.vsttime || '').slice(0, 8),
     app_staff: r.app_staff || '',
     app_staff_name: r.app_staff_name || '',
@@ -573,7 +573,7 @@ async function saveCheckField(cfg, field, vn, value) {
       const ov = await db.query(cfg, 'SELECT hn, vstdate, vsttime FROM ovst WHERE vn = ? LIMIT 1', [vn]);
       if (!ov.length) { const e = new Error('ไม่พบ visit นี้'); e.status = 404; throw e; }
       const sql = 'INSERT INTO opdscreen (vn, hn, vstdate, vsttime, ' + f.col + ') VALUES (?, ?, ?, ?, ?)';
-      await db.execute(cfg, sql, [vn, ov[0].hn, String(ov[0].vstdate).slice(0, 10), ov[0].vsttime || '00:00:00', val]);
+      await db.execute(cfg, sql, [vn, ov[0].hn, db.ymd(ov[0].vstdate), ov[0].vsttime || '00:00:00', val]);
       return { affected: 1, value: val };
     }
   }
