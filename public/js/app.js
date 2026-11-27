@@ -23,6 +23,7 @@
     ancData: null,
     ipdBasis: 'stay',
     ipdWard: '',
+    ipdPttype: '',
     ipdMiss: '',
     ipdData: null
   };
@@ -292,7 +293,7 @@
       loading(ip);
       try {
         var id = await API.call('data.ipdcheck', {
-          from: state.from, to: state.to, basis: state.ipdBasis, ward: state.ipdWard,
+          from: state.from, to: state.to, basis: state.ipdBasis, ward: state.ipdWard, pttype: state.ipdPttype || '',
           miss: state.ipdMiss, status: state.status, q: state.q
         });
         renderIpd(ip, id);
@@ -1437,9 +1438,22 @@
           esc(w.name) + ' (' + UI.num(w.count) + ')</option>';
       }).join('');
 
+    // ตัวเลือกสิทธิ (group by pttype ตามมุมมอง + ward ที่เลือก)
+    var pts = d.pttypes || [];
+    var pTotal = pts.reduce(function (a, x) { return a + x.count; }, 0);
+    var selPt = state.ipdPttype || '';
+    var hasPt = !selPt || pts.some(function (x) { return x.pttype === selPt; });
+    var popt = '<option value="">— ทุกสิทธิ (' + UI.num(pTotal) + ') —</option>' +
+      (hasPt ? '' : '<option value="' + esc(selPt) + '" selected>สิทธิ ' + esc(selPt) + ' (0)</option>') +
+      pts.map(function (x) {
+        return '<option value="' + esc(x.pttype) + '"' + (x.pttype === selPt ? ' selected' : '') + '>' +
+          (x.pttype === '__none__' ? '' : esc(x.pttype) + ' · ') + esc(x.name) + ' (' + UI.num(x.count) + ')</option>';
+      }).join('');
+
     html += '<div class="card">' +
       '<div class="ipd-bar">' +
-      '<select class="select" id="ipdWard" title="เลือก ward">' + wopt + '</select>' + seg +
+      '<select class="select" id="ipdWard" title="เลือก ward">' + wopt + '</select>' +
+      '<select class="select" id="ipdPttype" title="เลือกสิทธิ (pttype)" style="max-width:320px">' + popt + '</select>' + seg +
       '<span class="small muted">' + (basis === 'stay' ? 'มุมมองนี้ไม่ใช้ช่วงวันที่ — แสดงทุกคนที่ยังไม่จำหน่าย'
         : 'ใช้ช่วงวันที่ด้านบน (' + esc(UI.thaiDate(d.from)) + ' – ' + esc(UI.thaiDate(d.to)) + ')') + '</span></div>';
 
@@ -1487,6 +1501,7 @@
       b.addEventListener('click', function () { state.ipdBasis = b.dataset.basis; state.ipdMiss = ''; refresh(); });
     });
     $('#ipdWard').addEventListener('change', function () { state.ipdWard = this.value; state.ipdMiss = ''; refresh(); });
+    $('#ipdPttype').addEventListener('change', function () { state.ipdPttype = this.value; state.ipdMiss = ''; refresh(); });
     $$('#pageIpd .imiss').forEach(function (c) {
       c.addEventListener('click', function () { state.ipdMiss = (state.ipdMiss === c.dataset.key) ? '' : c.dataset.key; refresh(); });
     });

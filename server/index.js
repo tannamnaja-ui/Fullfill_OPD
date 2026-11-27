@@ -515,10 +515,20 @@ async function handle(name, p, session, req, res) {
       const basis = ipd.BASIS[p.basis] ? String(p.basis) : 'stay';
       const from = dateOr(p.from), to = dateOr(p.to || p.from);
       const ward = String(p.ward || '');
-      const [wards, all] = await Promise.all([
+      const [wards, wardRows] = await Promise.all([
         ipd.wards(cfg, basis, from, to),
         ipd.ipdList(cfg, basis, from, to, ward, 20000)
       ]);
+      // ตัวเลือกสิทธิ: group by pttype ของผู้ป่วยตามมุมมอง + ward ที่เลือก
+      const ptMap = {};
+      wardRows.forEach((r) => {
+        const k = String(r.pttype || '').trim() || '__none__';
+        if (!ptMap[k]) ptMap[k] = { pttype: k, name: k === '__none__' ? '(ไม่ระบุสิทธิ)' : (r.pttype_name || ('สิทธิ ' + k)), count: 0 };
+        ptMap[k].count++;
+      });
+      const pttypes = Object.values(ptMap).sort((a, b) => b.count - a.count || a.pttype.localeCompare(b.pttype));
+      const pttype = String(p.pttype || '');
+      const all = pttype ? wardRows.filter((r) => (String(r.pttype || '').trim() || '__none__') === pttype) : wardRows;
       const summary = ipd.summarize(all);
       let rows = all;
       if (p.status === 'incomplete') rows = rows.filter((r) => !r._complete);
@@ -533,7 +543,7 @@ async function handle(name, p, session, req, res) {
           String(r.ptname || '').toLowerCase().includes(q) ||
           String(r.cid || '').includes(q));
       }
-      return { basis, from, to, ward, wards, fields: ipd.META, summary, grandTotal: all.length, total: rows.length, rows: rows.slice(0, 3000) };
+      return { basis, from, to, ward, wards, pttype, pttypes, fields: ipd.META, summary, grandTotal: all.length, total: rows.length, rows: rows.slice(0, 3000) };
     }
 
     case 'data.ipddetail': {
